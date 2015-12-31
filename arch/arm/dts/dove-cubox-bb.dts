@@ -8,9 +8,32 @@
 / {
 	chosen {
 		stdout-path = &uart0;
+
+		environment-flash {
+			compatible = "barebox,environment";
+			device-path = &environment_flash;
+			status = "okay";
+		};
 	};
 };
 
 &{/leds/led-power} {
 		barebox,default-trigger = "heartbeat";
+};
+
+&spi0 {
+	spi-flash@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "barebox";
+			reg = <0x00000000 0x00200000>;
+		};
+
+		environment_flash: partition@0x200000 {
+			label = "env";
+			reg = <0x00200000 0x00020000>;
+		};
+	};
 };
