@@ -376,7 +376,7 @@
 				marvell,tx-checksum-limit = <1600>;
 				status = "disabled";
 
-				ethernet-port@0 {
+				ethport: ethernet-port@0 {
 					compatible = "marvell,orion-eth-port";
 					reg = <0>;
 					interrupts = <29>;

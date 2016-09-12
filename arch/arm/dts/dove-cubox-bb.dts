@@ -37,3 +37,7 @@
 		};
 	};
 };
+
+&ethport {
+	phy-mode ="rgmii-id";
+};
