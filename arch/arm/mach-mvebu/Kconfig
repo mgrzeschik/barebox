@@ -105,6 +105,10 @@ config MACH_SEAGATE_DOCKSTAR
 	bool "Seagate Dockstar"
 	select ARCH_KIRKWOOD
 
+config MACH_IOMEGA_ICONNECT
+	bool "Iomega Iconnect"
+	select ARCH_KIRKWOOD
+
 config MACH_USI_TOPKICK
 	bool "Topkick"
 	select ARCH_KIRKWOOD

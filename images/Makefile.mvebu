@@ -127,6 +127,14 @@ pblb-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += start_seagate_dockstar
 image-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += barebox-seagate-dockstar.img
 image-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += barebox-seagate-dockstar-2nd.img
 
+IOMEGA_ICONNECT_KWBOPTS = ${KWBOPTS} -i $(board)/iomega-iconnect/kwbimage.cfg
+OPTS_start_iomega_iconnect.pblx.kwbimg = $(IOMEGA_ICONNECT_KWBOPTS)
+FILE_barebox-iomega-iconnect.img   = start_iomega_iconnect.pblb.kwbimg
+FILE_barebox-iomega-iconnect-2nd.img = start_iomega_iconnect.pblb
+pblb-$(CONFIG_MACH_IOMEGA_ICONNECT) += start_iomega_iconnect
+image-$(CONFIG_MACH_IOMEGA_ICONNECT) += barebox-iomega-iconnect.img
+image-$(CONFIG_MACH_IOMEGA_ICONNECT) += barebox-iomega-iconnect-2nd.img
+
 USI_TOPKICK_KWBOPTS = ${KWBOPTS} -i $(board)/usi-topkick/kwbimage.cfg
 OPTS_start_usi_topkick.pblb.kwbimg = $(USI_TOPKICK_KWBOPTS)
 FILE_barebox-usi-topkick.img = start_usi_topkick.pblb.kwbimg

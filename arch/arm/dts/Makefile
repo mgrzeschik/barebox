@@ -92,6 +92,7 @@ lwl-$(CONFIG_MACH_POLYHEX_DEBIX) += \
 	imx8mp-debix-model-a.dtb.o \
 	imx8mp-debix-som-a-bmb-08.dtb.o
 lwl-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += kirkwood-dockstar.dtb.o
+lwl-$(CONFIG_MACH_IOMEGA_ICONNECT) += kirkwood-iconnect.dtb.o
 lwl-$(CONFIG_MACH_PROTONIC_IMX6) += \
 	imx6q-prti6q.dtb.o \
 	imx6q-prtwd2.dtb.o \
