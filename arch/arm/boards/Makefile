@@ -48,6 +48,7 @@ obj-$(CONFIG_MACH_GE863)			+= telit-evk-pro3/
 obj-$(CONFIG_MACH_GIRA_NCP)			+= gira-ncp/
 obj-$(CONFIG_MACH_GK802)			+= gk802/
 obj-$(CONFIG_MACH_GLOBALSCALE_GURUPLUG)		+= globalscale-guruplug/
+obj-$(CONFIG_MACH_IOMEGA_ICONNECT)		+= iomega-iconnect/
 obj-$(CONFIG_MACH_GLOBALSCALE_MIRABOX)		+= globalscale-mirabox/
 obj-$(CONFIG_MACH_GRINN_LITEBOARD)		+= grinn-liteboard/
 obj-$(CONFIG_MACH_GUF_SANTARO)			+= guf-santaro/

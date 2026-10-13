@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * barebox specific additions for the Iomega iConnect
+ *
+ * NAND layout (512 MiB, 128 KiB erase blocks, 2 KiB pages):
+ *
+ *   0x00000000 - 0x000bffff  barebox              (768 KiB, kwbimage v0)
+ *   0x000c0000 - 0x000fffff  barebox-environment  (256 KiB, 1 spare block)
+ *   0x00100000 - 0x004fffff  kernel               (4 MiB, raw zImage)
+ *   0x00500000 - 0x1fffffff  root                 (UBI)
+ *
+ * The upstream Linux partition table is replaced because its "uboot"
+ * (0x0-0xc0000) and "env" (0xa0000-0xc0000) partitions overlap, which
+ * barebox refuses to register.
+ */
+
+#include "arm/marvell/kirkwood-iconnect.dts"
+
+/ {
+	barebox,disable-deep-probe;
+
+	chosen {
+		/*
+		 * Upstream hardcodes the location where the Iomega stock
+		 * loader used to put its initrd. barebox only rewrites these
+		 * properties when an initrd is actually passed, so without
+		 * removing them every kernel booted without initrd tries to
+		 * unpack garbage from 0x4500040.
+		 */
+		/delete-property/ linux,initrd-start;
+		/delete-property/ linux,initrd-end;
+
+		environment {
+			compatible = "barebox,environment";
+			device-path = &env_nand;
+		};
+	};
+};
+
+&nand {
+	/delete-node/ partition@0;
+	/delete-node/ partition@a0000;
+	/delete-node/ partition@100000;
+	/delete-node/ partition@540000;
+	/delete-node/ partition@980000;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "barebox";
+			reg = <0x00000000 0x000c0000>;
+		};
+
+		env_nand: partition@c0000 {
+			label = "barebox-environment";
+			reg = <0x000c0000 0x00040000>;
+		};
+
+		partition@100000 {
+			label = "kernel";
+			reg = <0x00100000 0x00400000>;
+		};
+
+		partition@500000 {
+			label = "root";
+			reg = <0x00500000 0x1fb00000>;
+		};
+	};
+};
+
+&{/gpio-leds/led-power-blue} {
+	barebox,default-trigger = "heartbeat";
+};

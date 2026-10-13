@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Boot from the first partition of a USB stick/disk.
+#
+# Expected files on that partition (ext2/3/4 or FAT):
+#   /boot/zImage          kernel (required)
+#   /boot/initrd.img      initramfs (optional)
+#   /boot/board.dtb       device tree (optional, default: barebox's own)
+#
+# The root filesystem is expected on the same partition (/dev/sda1).
+
+usb
+if [ ! -e /dev/disk0.0 ]; then
+	echo "boot/usb: no USB storage partition found"
+	exit 1
+fi
+
+mkdir -p /mnt/usb
+mount /dev/disk0.0 /mnt/usb || exit 1
+
+if [ ! -f /mnt/usb/boot/zImage ]; then
+	echo "boot/usb: /boot/zImage not found on /dev/disk0.0"
+	umount /mnt/usb
+	exit 1
+fi
+
+global.bootm.image=/mnt/usb/boot/zImage
+if [ -f /mnt/usb/boot/initrd.img ]; then
+	global.bootm.initrd=/mnt/usb/boot/initrd.img
+fi
+if [ -f /mnt/usb/boot/board.dtb ]; then
+	global.bootm.oftree=/mnt/usb/boot/board.dtb
+fi
+
+global.linux.bootargs.dyn.root="root=/dev/sda1 rootwait rw"

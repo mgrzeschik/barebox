@@ -33,6 +33,7 @@ lwl-$(CONFIG_MACH_MEERKAT96) += imx7d-meerkat96.dtb.o
 lwl-$(CONFIG_MACH_GIRA_NCP) += imx8mm-gira-ncp.dtb.o
 lwl-$(CONFIG_MACH_GK802) += imx6q-gk802.dtb.o
 lwl-$(CONFIG_MACH_GLOBALSCALE_GURUPLUG) += kirkwood-guruplug-server-plus-bb.dtb.o
+lwl-$(CONFIG_MACH_IOMEGA_ICONNECT) += kirkwood-iconnect-bb.dtb.o
 lwl-$(CONFIG_MACH_GLOBALSCALE_MIRABOX) += armada-370-mirabox-bb.dtb.o
 lwl-$(CONFIG_MACH_GRINN_LITEBOARD) += imx6ul-liteboard.dtb.o
 lwl-$(CONFIG_MACH_GUF_SANTARO) += imx6q-guf-santaro.dtb.o

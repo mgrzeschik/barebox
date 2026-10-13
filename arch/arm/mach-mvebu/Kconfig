@@ -97,6 +97,16 @@ config MACH_GLOBALSCALE_GURUPLUG
 	bool "Guruplug"
 	select ARCH_KIRKWOOD
 
+config MACH_IOMEGA_ICONNECT
+	bool "Iomega iConnect"
+	select ARCH_KIRKWOOD
+	help
+	  Say y here to build barebox for the Iomega iConnect wireless data
+	  station (Kirkwood 88F6281, 256 MiB DDR2, 512 MiB NAND). The
+	  resulting barebox-iomega-iconnect.img is booted by the BootROM from
+	  NAND or via kwboot over UART, barebox-iomega-iconnect-2nd.img can
+	  be started from RAM by U-Boot or a JTAG debugger.
+
 config MACH_PLATHOME_OPENBLOCKS_A6
 	bool "PlatHome OpenBlocks A6"
 	select ARCH_KIRKWOOD

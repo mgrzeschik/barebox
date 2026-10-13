@@ -111,6 +111,14 @@ pblb-$(CONFIG_MACH_GLOBALSCALE_GURUPLUG) += start_globalscale_guruplug
 image-$(CONFIG_MACH_GLOBALSCALE_GURUPLUG) += barebox-globalscale-guruplug.img
 image-$(CONFIG_MACH_GLOBALSCALE_GURUPLUG) += barebox-globalscale-guruplug-2nd.img
 
+IOMEGA_ICONNECT_KWBOPTS = ${KWBOPTS} -i $(board)/iomega-iconnect/kwbimage.cfg
+OPTS_start_iomega_iconnect.pblb.kwbimg = $(IOMEGA_ICONNECT_KWBOPTS)
+FILE_barebox-iomega-iconnect.img = start_iomega_iconnect.pblb.kwbimg
+FILE_barebox-iomega-iconnect-2nd.img = start_iomega_iconnect.pblb
+pblb-$(CONFIG_MACH_IOMEGA_ICONNECT) += start_iomega_iconnect
+image-$(CONFIG_MACH_IOMEGA_ICONNECT) += barebox-iomega-iconnect.img
+image-$(CONFIG_MACH_IOMEGA_ICONNECT) += barebox-iomega-iconnect-2nd.img
+
 PLATHOME_OPENBLOCKS_A6_KWBOPTS = ${KWBOPTS} -i $(board)/plathome-openblocks-a6/kwbimage.cfg
 OPTS_start_plathome_openblocks_a6.pblb.kwbimg = $(PLATHOME_OPENBLOCKS_A6_KWBOPTS)
 FILE_barebox-plathome-openblocks-a6.img = start_plathome_openblocks_a6.pblb.kwbimg
