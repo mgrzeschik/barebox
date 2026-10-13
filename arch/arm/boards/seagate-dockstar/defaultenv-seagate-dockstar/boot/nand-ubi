@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Boot from the UBIFS volume "rootfs" inside the NAND "root" partition.
+#
+# Expected files inside the volume:
+#   /boot/zImage          kernel (required)
+#   /boot/initrd.img      initramfs (optional)
+#   /boot/board.dtb       device tree (optional, default: barebox's own)
+
+if [ ! -e /dev/nand0.root.ubi ]; then
+	ubiattach /dev/nand0.root || exit 1
+fi
+
+if [ ! -e /dev/nand0.root.ubi.rootfs ]; then
+	echo "boot/nand-ubi: no UBI volume \"rootfs\" in /dev/nand0.root"
+	exit 1
+fi
+
+mkdir -p /mnt/rootfs
+mount -t ubifs /dev/nand0.root.ubi.rootfs /mnt/rootfs || exit 1
+
+if [ ! -f /mnt/rootfs/boot/zImage ]; then
+	echo "boot/nand-ubi: /boot/zImage not found in UBI volume rootfs"
+	exit 1
+fi
+
+global.bootm.image=/mnt/rootfs/boot/zImage
+if [ -f /mnt/rootfs/boot/initrd.img ]; then
+	global.bootm.initrd=/mnt/rootfs/boot/initrd.img
+fi
+if [ -f /mnt/rootfs/boot/board.dtb ]; then
+	global.bootm.oftree=/mnt/rootfs/boot/board.dtb
+fi
+
+global.linux.bootargs.dyn.root="ubi.mtd=root root=ubi0:rootfs rootfstype=ubifs rw"

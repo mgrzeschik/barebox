@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * barebox specific additions for the Seagate FreeAgent DockStar
+ *
+ * NAND layout (256 MiB, 128 KiB erase blocks, 2 KiB pages):
+ *
+ *   0x00000000 - 0x000bffff  barebox              (768 KiB, kwbimage v0)
+ *   0x000c0000 - 0x000fffff  barebox-environment  (256 KiB, 1 spare block)
+ *   0x00100000 - 0x004fffff  kernel               (4 MiB, raw zImage)
+ *   0x00500000 - 0x0fffffff  root                 (UBI)
+ *
+ * The first 1 MiB is the same area the U-Boot partition used to occupy,
+ * so kernel and root stay where the stock/OpenWrt/Debian layouts have them.
+ */
+
+#include "arm/marvell/kirkwood-dockstar.dts"
+
+/ {
+	barebox,disable-deep-probe;
+
+	chosen {
+		environment {
+			compatible = "barebox,environment";
+			device-path = &env_nand;
+		};
+	};
+};
+
+&nand {
+	/delete-node/ partition@0;
+	/delete-node/ partition@100000;
+	/delete-node/ partition@500000;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "barebox";
+			reg = <0x0000000 0x00c0000>;
+		};
+
+		env_nand: partition@c0000 {
+			label = "barebox-environment";
+			reg = <0x00c0000 0x0040000>;
+		};
+
+		partition@100000 {
+			label = "kernel";
+			reg = <0x0100000 0x0400000>;
+		};
+
+		partition@500000 {
+			label = "root";
+			reg = <0x0500000 0xfb00000>;
+		};
+	};
+};
+
+&{/gpio-leds/led-health} {
+	barebox,default-trigger = "heartbeat";
+};

@@ -101,6 +101,16 @@ config MACH_PLATHOME_OPENBLOCKS_A6
 	bool "PlatHome OpenBlocks A6"
 	select ARCH_KIRKWOOD
 
+config MACH_SEAGATE_DOCKSTAR
+	bool "Seagate FreeAgent DockStar"
+	select ARCH_KIRKWOOD
+	help
+	  Say y here to build barebox for the Seagate FreeAgent DockStar
+	  (Kirkwood 88F6281, 128 MiB DDR2, 256 MiB NAND). The resulting
+	  barebox-seagate-dockstar.img is booted by the BootROM from NAND
+	  or via kwboot over UART, barebox-seagate-dockstar-2nd.img can be
+	  started from RAM by U-Boot or a JTAG debugger.
+
 config MACH_USI_TOPKICK
 	bool "Topkick"
 	select ARCH_KIRKWOOD

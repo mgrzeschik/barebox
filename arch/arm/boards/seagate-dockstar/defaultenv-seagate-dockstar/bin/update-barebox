@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# update-barebox [IMAGE]
+#
+# Write a new barebox to NAND. Without argument the image is fetched via
+# TFTP from $global.net.server as "barebox-seagate-dockstar.img".
+# barebox_update refuses anything that is not a Kirkwood kwbimage v0.
+
+img="$1"
+
+if [ -z "$img" ]; then
+	ifup -a1 || exit 1
+	img=/mnt/tftp/barebox-seagate-dockstar.img
+fi
+
+if [ ! -f "$img" ]; then
+	echo "update-barebox: $img not found"
+	exit 1
+fi
+
+barebox_update -y -t nand "$img" || exit 1
+
+echo
+echo "barebox updated. Type 'reset' to start the new version."

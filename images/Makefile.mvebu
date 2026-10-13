@@ -119,6 +119,14 @@ pblb-$(CONFIG_MACH_PLATHOME_OPENBLOCKS_A6) += start_plathome_openblocks_a6
 image-$(CONFIG_MACH_PLATHOME_OPENBLOCKS_A6) += barebox-plathome-openblocks-a6.img
 image-$(CONFIG_MACH_PLATHOME_OPENBLOCKS_A6) += barebox-plathome-openblocks-a6-2nd.img
 
+SEAGATE_DOCKSTAR_KWBOPTS = ${KWBOPTS} -i $(board)/seagate-dockstar/kwbimage.cfg
+OPTS_start_seagate_dockstar.pblb.kwbimg = $(SEAGATE_DOCKSTAR_KWBOPTS)
+FILE_barebox-seagate-dockstar.img = start_seagate_dockstar.pblb.kwbimg
+FILE_barebox-seagate-dockstar-2nd.img = start_seagate_dockstar.pblb
+pblb-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += start_seagate_dockstar
+image-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += barebox-seagate-dockstar.img
+image-$(CONFIG_MACH_SEAGATE_DOCKSTAR) += barebox-seagate-dockstar-2nd.img
+
 USI_TOPKICK_KWBOPTS = ${KWBOPTS} -i $(board)/usi-topkick/kwbimage.cfg
 OPTS_start_usi_topkick.pblb.kwbimg = $(USI_TOPKICK_KWBOPTS)
 FILE_barebox-usi-topkick.img = start_usi_topkick.pblb.kwbimg
