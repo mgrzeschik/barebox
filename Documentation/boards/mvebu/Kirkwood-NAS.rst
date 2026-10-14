@@ -323,6 +323,58 @@ To use the OpenOCD files without the helper:
 If your adapter only has one of the reset lines, change ``reset_config`` in
 ``openocd/kirkwood-nas.tcl``.
 
+Segger J-Link
+"""""""""""""
+
+OpenOCD drives a J-Link directly through libjaylink with Segger's normal
+firmware. Under Linux only the udev rules shipped with OpenOCD are needed,
+under Windows the J-Link has to be switched to the WinUSB driver (for
+example with Zadig) for OpenOCD to see it. The Segger J-Link software is
+not used.
+
+.. code-block:: sh
+
+  export OPENOCD_ADAPTER=jlink           # = interface/jlink.cfg
+  kirkwood-nas.sh openocd-ram dockstar
+
+  # optional: several probes connected, or unstable scan chain
+  export OPENOCD_SERIAL=000123456789     # serial printed by "JLinkExe" or OpenOCD
+  export OPENOCD_SPEED=500               # kHz, default 2000
+
+Without the helper:
+
+.. code-block:: sh
+
+  openocd -f interface/jlink.cfg \
+          -f Documentation/boards/mvebu/kirkwood-nas/openocd/seagate-dockstar.cfg \
+          -c "init; kw_boot_ram build-kirkwood-nas/images/barebox-seagate-dockstar-2nd.img; shutdown"
+
+The J-Link has the standard ARM 20-pin connector. Connect it to the
+board's JTAG header as follows:
+
+=============== =========== ==========================================
+J-Link pin      Signal      Note
+=============== =========== ==========================================
+1               VTref       board I/O voltage (3.3 V), sense only
+3               nTRST
+5               TDI
+7               TMS
+9               TCK
+13              TDO
+15              nRESET      system reset (SRST)
+4, 6, ... 20    GND         at least one, better several
+=============== =========== ==========================================
+
+VTref must be connected: the J-Link sets its output levels from it and
+does not drive the target without it. Pin 19 (5 V supply) stays
+unconnected. Power the box from its own supply. If OpenOCD reports
+``JTAG scan chain interrogation failed: all ones``, check VTref, the box's
+power and TDO first.
+
+The OpenOCD configuration selects the JTAG transport explicitly, because a
+J-Link would otherwise default to SWD, which the Feroceon core does not
+have.
+
 Step 2: write barebox to NAND
 -----------------------------
 

@@ -14,13 +14,24 @@
 #                         the BootROM's native Reed-Solomon ECC layout
 #   kw_dump_nand FILE     save the first 1 MiB of NAND (bootloader backup)
 
+# The Feroceon core only has JTAG. Adapters that also do SWD (Segger J-Link,
+# CMSIS-DAP, ...) would otherwise pick SWD as their default transport.
+transport select jtag
+
 source [find target/feroceon.cfg]
 
 # Most adapters need both reset lines for a reliable "reset halt".
 # Change to "srst_only" or "trst_only" if your adapter lacks one.
+# A J-Link drives nTRST (pin 3) and nRESET (pin 15) of the 20-pin connector.
 reset_config trst_and_srst
 
-adapter speed 2000
+# JTAG clock in kHz, override with -c "set KW_ADAPTER_SPEED <kHz>" before
+# this file (kirkwood-nas.sh: OPENOCD_SPEED=<kHz>). Lower it if the scan
+# chain is unstable with long wires.
+if {![info exists KW_ADAPTER_SPEED]} {
+	set KW_ADAPTER_SPEED 2000
+}
+adapter speed $KW_ADAPTER_SPEED
 
 # Kirkwood NAND controller, chip select window at its reset default.
 nand device kirkwood.nand orion $_TARGETNAME 0xd8000000

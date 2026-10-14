@@ -45,7 +45,10 @@ Environment
   CROSS_COMPILE   toolchain prefix (default: arm-linux-gnueabi-)
   OPENOCD_ADAPTER OpenOCD adapter config, e.g.
                   "interface/ftdi/olimex-arm-usb-ocd-h.cfg" (required for
-                  the openocd-* commands)
+                  the openocd-* commands). "jlink" is a shorthand for
+                  "interface/jlink.cfg" (Segger J-Link).
+  OPENOCD_SPEED   JTAG clock in kHz (default: 2000)
+  OPENOCD_SERIAL  serial number of the probe, if several are connected
 USAGE
 }
 
@@ -168,12 +171,27 @@ MSG
 }
 
 openocd_run() {
-	local b=$1; shift
-	[ -n "${OPENOCD_ADAPTER:-}" ] ||
+	local b=$1 adapter; shift
+	local pre=()
+
+	adapter=${OPENOCD_ADAPTER:-}
+	[ -n "$adapter" ] ||
 		die "set OPENOCD_ADAPTER to your adapter config," \
-		    "e.g. interface/ftdi/olimex-arm-usb-ocd-h.cfg"
+		    "e.g. jlink or interface/ftdi/olimex-arm-usb-ocd-h.cfg"
+	case "$adapter" in
+	jlink|j-link)	adapter=interface/jlink.cfg ;;
+	esac
 	command -v openocd >/dev/null || die "openocd not found"
-	openocd -f "$OPENOCD_ADAPTER" -f "$HERE/openocd/$b.cfg" -c "init" "$@" -c "shutdown"
+
+	if [ -n "${OPENOCD_SERIAL:-}" ]; then
+		pre+=(-c "adapter serial $OPENOCD_SERIAL")
+	fi
+	if [ -n "${OPENOCD_SPEED:-}" ]; then
+		pre+=(-c "set KW_ADAPTER_SPEED $OPENOCD_SPEED")
+	fi
+
+	openocd -f "$adapter" "${pre[@]}" -f "$HERE/openocd/$b.cfg" \
+		-c "init" "$@" -c "shutdown"
 }
 
 cmd_openocd_ram() {
