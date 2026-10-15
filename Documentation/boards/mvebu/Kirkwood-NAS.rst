@@ -166,8 +166,26 @@ Via JTAG:
 
 .. code-block:: sh
 
-  OPENOCD_ADAPTER=interface/ftdi/olimex-arm-usb-ocd-h.cfg \
-    kirkwood-nas.sh openocd-backup dockstar bootloader-backup.bin
+  OPENOCD_ADAPTER=jlink kirkwood-nas.sh openocd-backup dockstar bootloader-backup.bin
+
+OpenOCD's NAND driver for Kirkwood reads every byte with its own JTAG access,
+so this is slow no matter which adapter or clock you use. The helper
+therefore reads the kwbimage header of the old bootloader at NAND offset 0
+and only dumps that image (typically well under half of the 1 MiB). It shows
+progress, rate and remaining time while it runs. Add ``full`` to dump the
+whole first 1 MiB including the old environment, or give a length in bytes:
+
+.. code-block:: sh
+
+  kirkwood-nas.sh openocd-backup dockstar bootloader-full.bin full
+
+``OPENOCD_FAST_MEM=1`` makes OpenOCD skip its per-access completion checks,
+which speeds up the dump. If you use it, dump twice and compare the files
+before relying on the backup.
+
+The OpenOCD dump reads the NAND contents without any ECC processing, so the
+backup is exactly what is stored, whichever ECC layout the old bootloader
+was written with.
 
 From barebox itself, if you have already got it running from RAM (the
 first 1 MiB is covered by the two barebox partitions):

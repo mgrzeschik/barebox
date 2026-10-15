@@ -12,7 +12,10 @@
 #                         (recommended: then update NAND from within barebox)
 #   kw_flash_nand IMAGE   write barebox-<board>.img to NAND offset 0 using
 #                         the BootROM's native Reed-Solomon ECC layout
-#   kw_dump_nand FILE     save the first 1 MiB of NAND (bootloader backup)
+#   kw_dump_nand FILE [auto|full|LENGTH]
+#                         save the bootloader from NAND with live progress.
+#                         auto (default): only the kwbimage found at offset 0,
+#                         full: the first 1 MiB, LENGTH: that many bytes
 
 # The Feroceon core only has JTAG. Adapters that also do SWD (Segger J-Link,
 # CMSIS-DAP, ...) would otherwise pick SWD as their default transport.
@@ -145,9 +148,107 @@ proc kw_flash_nand {image} {
 	echo "kirkwood-nas: done, power cycle the board"
 }
 
-proc kw_dump_nand {file} {
+# OpenOCD's orion NAND driver has a fast on-target routine for writing, but
+# reads every byte with a separate JTAG memory access, and "nand dump" only
+# reports when it is done. Dump in chunks to show progress, and by default
+# only as much as the bootloader image at offset 0 occupies.
+set KW_NAND_PAGE 0x800
+set KW_DUMP_CHUNK 0x8000
+
+proc kw_append_file {dst src} {
+	set in [open $src rb]
+	set data [$in read]
+	$in close
+	set out [open $dst ab]
+	$out puts -nonewline $data
+	$out close
+}
+
+# Length of the kwbimage at NAND offset 0, rounded up to full pages, or 0
+# if there is none.
+proc kw_nand_kwbimage_length {tmp} {
+	global KW_NAND_PAGE
+
+	nand dump 0 $tmp 0x0 $KW_NAND_PAGE
+	set f [open $tmp rb]
+	set hdr [$f read 32]
+	$f close
+	file delete $tmp
+
+	set blockid [unpack $hdr -uintle 0 8]
+	set blocksize [unpack $hdr -uintle 32 32]
+	set srcaddr [unpack $hdr -uintle 96 32]
+
+	if {$blockid != 0x8b || $blocksize == 0 || $srcaddr == 0 ||
+	    $srcaddr + $blocksize > 0x100000} {
+		return 0
+	}
+
+	set len [expr {$srcaddr + $blocksize}]
+	return [expr {($len + $KW_NAND_PAGE - 1) / $KW_NAND_PAGE * $KW_NAND_PAGE}]
+}
+
+proc kw_fmt_time {s} {
+	return [format "%d:%02d" [expr {int($s) / 60}] [expr {int($s) % 60}]]
+}
+
+proc kw_dump_nand {file {length auto}} {
+	global KW_NAND_PAGE KW_DUMP_CHUNK KW_DUMP_FAST_MEM
+
 	kw_halt_init
 	nand probe 0
-	echo "kirkwood-nas: dumping first 1 MiB of NAND to $file"
-	nand dump 0 $file 0x0 0x100000
+
+	set tmp "$file.part"
+	file delete $tmp
+
+	if {$length eq "full"} {
+		set length 0x100000
+	} elseif {$length eq "auto"} {
+		set length [kw_nand_kwbimage_length $tmp]
+		if {$length == 0} {
+			echo "kirkwood-nas: no kwbimage at NAND offset 0, dumping 1 MiB"
+			set length 0x100000
+		} else {
+			echo [format "kirkwood-nas: bootloader image at NAND offset 0 is %d KiB" \
+				[expr {$length / 1024}]]
+		}
+	}
+	set length [expr {($length + $KW_NAND_PAGE - 1) / $KW_NAND_PAGE * $KW_NAND_PAGE}]
+
+	if {[info exists KW_DUMP_FAST_MEM] && $KW_DUMP_FAST_MEM} {
+		echo "kirkwood-nas: using fast memory access for the dump"
+		arm7_9 fast_memory_access enable
+	}
+
+	set out [open $file wb]
+	$out close
+
+	echo [format "kirkwood-nas: dumping %d KiB of NAND to %s" \
+		[expr {$length / 1024}] $file]
+	set t0 [ms]
+	for {set off 0} {$off < $length} {incr off $KW_DUMP_CHUNK} {
+		set n [expr {$length - $off}]
+		if {$n > $KW_DUMP_CHUNK} {
+			set n $KW_DUMP_CHUNK
+		}
+		set r [nand dump 0 $tmp $off $n]
+		kw_append_file $file $tmp
+		file delete $tmp
+
+		set done [expr {$off + $n}]
+		set ms [expr {[ms] - $t0}]
+		if {$ms < 1} {
+			set ms 1
+		}
+		set secs [expr {$ms / 1000.0}]
+		set rate [expr {$done / 1024.0 / $secs}]
+		set eta [expr {($length - $done) / 1024.0 / $rate}]
+		echo [format "kirkwood-nas: %4d / %4d KiB  %3d%%  %6.1f KiB/s  elapsed %s  left %s" \
+			[expr {$done / 1024}] [expr {$length / 1024}] \
+			[expr {$done * 100 / $length}] $rate \
+			[kw_fmt_time $secs] [kw_fmt_time $eta]]
+	}
+
+	arm7_9 fast_memory_access disable
+	kw_report "dumped" $file $t0
 }

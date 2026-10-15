@@ -34,7 +34,10 @@ Getting barebox running (pick one)
   uboot BOARD [SERVERIP]      print U-Boot commands to chainload and flash
   openocd-ram BOARD           JTAG: init DDR, load and start barebox in RAM
   openocd-nand BOARD          JTAG: write barebox to NAND directly
-  openocd-backup BOARD FILE   JTAG: save first 1 MiB of NAND to FILE
+  openocd-backup BOARD FILE [auto|full|LENGTH]
+                              JTAG: save the old bootloader from NAND to FILE.
+                              auto (default) dumps only the bootloader image,
+                              full the first 1 MiB. Shows live progress.
 
 Helpers
   tftp BOARD DIR              copy the images to a TFTP server directory
@@ -51,6 +54,9 @@ Environment
   OPENOCD_FAST_SPEED
                   JTAG clock in kHz for transfers (default: 6000)
   OPENOCD_SERIAL  serial number of the probe, if several are connected
+  OPENOCD_FAST_MEM
+                  set to 1 to use OpenOCD's fast memory access for
+                  openocd-backup (faster, skips per-access checks)
 USAGE
 }
 
@@ -194,6 +200,9 @@ openocd_run() {
 	if [ -n "${OPENOCD_FAST_SPEED:-}" ]; then
 		pre+=(-c "set KW_FAST_SPEED $OPENOCD_FAST_SPEED")
 	fi
+	if [ "${OPENOCD_FAST_MEM:-0}" = 1 ]; then
+		pre+=(-c "set KW_DUMP_FAST_MEM 1")
+	fi
 
 	openocd -f "$adapter" "${pre[@]}" -f "$HERE/openocd/$b.cfg" \
 		-c "init" "$@" -c "shutdown"
@@ -215,9 +224,24 @@ cmd_openocd_nand() {
 }
 
 cmd_openocd_backup() {
-	local b; b=$(board_name "${1:-}")
-	[ -n "${2:-}" ] || die "usage: openocd-backup BOARD FILE"
-	openocd_run "$b" -c "kw_dump_nand $(realpath -m "$2")"
+	local b file len
+	b=$(board_name "${1:-}")
+	[ -n "${2:-}" ] || die "usage: openocd-backup BOARD FILE [auto|full|LENGTH]"
+	file=$(realpath -m "$2")
+	len=${3:-auto}
+	case "$len" in
+	auto|full|0x[0-9a-fA-F]*|[0-9]*) ;;
+	*) die "length must be auto, full or a number, not \"$len\"" ;;
+	esac
+	[ ! -e "$file" ] || die "$file exists, not overwriting a backup"
+
+	openocd_run "$b" -c "kw_dump_nand $file $len"
+
+	[ -s "$file" ] || die "no backup written"
+	echo
+	echo "backup: $file, $(wc -c < "$file") bytes"
+	sha256sum "$file"
+	echo "Keep this file and its checksum somewhere safe."
 }
 
 cmd_tftp() {
