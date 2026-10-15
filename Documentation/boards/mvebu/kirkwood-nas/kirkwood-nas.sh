@@ -208,8 +208,28 @@ openocd_run() {
 		pre+=(-c "set KW_DUMP_FAST_MEM 1")
 	fi
 
+	# OpenOCD 0.12 always aborts on exit with a Feroceon target
+	# ("free(): invalid pointer"), so its exit status says nothing. The
+	# Tcl commands print "kirkwood-nas: DONE" when they have succeeded.
+	local log rc
+	log=$(mktemp)
+	set +e
 	openocd -f "$adapter" "${pre[@]}" -f "$HERE/openocd/$b.cfg" \
-		-c "init" "$@" -c "shutdown"
+		-c "init" "$@" -c "shutdown" 2>&1 | tee "$log"
+	rc=${PIPESTATUS[0]}
+	set -e
+
+	if grep -q '^kirkwood-nas: DONE' "$log"; then
+		rm -f "$log"
+		if [ "$rc" -ne 0 ]; then
+			echo "(OpenOCD exited with status $rc after finishing; this is a" \
+			     "known OpenOCD 0.12 crash on exit with Feroceon targets" \
+			     "and can be ignored)"
+		fi
+		return 0
+	fi
+	rm -f "$log"
+	die "OpenOCD did not finish (exit status $rc), see its output above"
 }
 
 cmd_openocd_ram() {

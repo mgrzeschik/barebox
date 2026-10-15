@@ -138,6 +138,15 @@ proc kw_work_area {enable} {
 	}
 }
 
+# Printed as the very last step of every top-level command. kirkwood-nas.sh
+# looks for it to tell success from failure, because OpenOCD 0.12 always
+# aborts on exit with a Feroceon target ("free(): invalid pointer":
+# arm9tdmi_deinit_target() frees the arm7_9_common member embedded in
+# struct arm926ejs_common), so its exit status is meaningless.
+proc kw_done {} {
+	echo "kirkwood-nas: DONE"
+}
+
 proc kw_report {what file t0} {
 	set ms [expr {[ms] - $t0}]
 	if {$ms < 1} {
@@ -170,6 +179,7 @@ proc kw_boot_ram {image} {
 	kw_load_verified $image $KW_LOAD_ADDR
 	echo "kirkwood-nas: starting barebox, watch the serial console (115200 8N1)"
 	resume $KW_LOAD_ADDR
+	kw_done
 }
 
 # Where a NAND image may be preloaded. barebox places itself, its stack and
@@ -192,6 +202,7 @@ proc kw_boot_ram_update {image nandimage {addr 0x00800000}} {
 	kw_load_verified $image $KW_LOAD_ADDR
 	echo "kirkwood-nas: starting barebox, watch the serial console (115200 8N1)"
 	resume $KW_LOAD_ADDR
+	kw_done
 }
 
 proc kw_debug_level {} {
@@ -262,7 +273,8 @@ proc kw_flash_nand {image} {
 
 	kw_work_area 1
 	kw_report "written" $image $t0
-	echo "kirkwood-nas: done, power cycle the board"
+	echo "kirkwood-nas: power cycle the board"
+	kw_done
 }
 
 # OpenOCD's orion NAND driver has a fast on-target routine for writing, but
@@ -371,4 +383,5 @@ proc kw_dump_nand {file {length auto}} {
 
 	arm7_9 fast_memory_access disable
 	kw_report "dumped" $file $t0
+	kw_done
 }
