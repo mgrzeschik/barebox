@@ -194,6 +194,34 @@ proc kw_boot_ram_update {image nandimage {addr 0x00800000}} {
 	resume $KW_LOAD_ADDR
 }
 
+proc kw_debug_level {} {
+	if {[catch {debug_level} s] || ![regexp {(-?[0-9]+)} $s -> lvl]} {
+		return 2
+	}
+	return $lvl
+}
+
+proc kw_nand_write_chunks {image size tmp t0} {
+	global KW_DUMP_CHUNK
+
+	set in [open $image rb]
+	for {set off 0} {$off < $size} {incr off $KW_DUMP_CHUNK} {
+		set f [open $tmp wb]
+		$f puts -nonewline [$in read $KW_DUMP_CHUNK]
+		$f close
+		if {[catch {nand write 0 $tmp $off oob_softecc_kw} err]} {
+			$in close
+			error "kirkwood-nas: NAND write at offset $off failed: $err"
+		}
+		set done [expr {$off + $KW_DUMP_CHUNK}]
+		if {$done > $size} {
+			set done $size
+		}
+		kw_progress $done $size $t0
+	}
+	$in close
+}
+
 proc kw_flash_nand {image} {
 	global KW_NAND_PAGE KW_DUMP_CHUNK
 
@@ -214,21 +242,23 @@ proc kw_flash_nand {image} {
 	set tmp "$image.part"
 	echo [format "kirkwood-nas: writing %s (%d KiB) with Kirkwood BootROM ECC" \
 		$image [expr {$size / 1024}]]
-	set in [open $image rb]
-	set t0 [ms]
-	for {set off 0} {$off < $size} {incr off $KW_DUMP_CHUNK} {
-		set f [open $tmp wb]
-		$f puts -nonewline [$in read $KW_DUMP_CHUNK]
-		$f close
-		set r [nand write 0 $tmp $off oob_softecc_kw]
-		file delete $tmp
-		set done [expr {$off + $KW_DUMP_CHUNK}]
-		if {$done > $size} {
-			set done $size
-		}
-		kw_progress $done $size $t0
+
+	# Without working area OpenOCD warns "not enough working area available
+	# (requested 2068)" for every page before it falls back to plain memory
+	# writes, which is exactly what is wanted here. Show only errors while
+	# writing, unless OpenOCD runs with debug output (-d3 and higher).
+	set lvl [kw_debug_level]
+	if {$lvl < 3} {
+		debug_level 0
 	}
-	$in close
+	set t0 [ms]
+	set failed [catch {kw_nand_write_chunks $image $size $tmp $t0} err]
+	debug_level $lvl
+	file delete $tmp
+	if {$failed} {
+		kw_work_area 1
+		error $err
+	}
 
 	kw_work_area 1
 	kw_report "written" $image $t0
