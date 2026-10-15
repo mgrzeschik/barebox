@@ -47,9 +47,15 @@ adapter speed $KW_ADAPTER_SPEED
 #
 #  - DCC downloads stream data through the debug communication channel to a
 #    small helper running on the CPU.
-#  - The working area holds that helper, the checksum code verify_image
-#    uses instead of reading everything back, and the NAND block write code
-#    of the orion NAND driver.
+#  - The working area holds that helper and the checksum code verify_image
+#    uses instead of reading everything back.
+#
+# The orion NAND driver would also run its block write code in the working
+# area. That code ends on a hardware breakpoint, and on the Feroceon (one
+# usable breakpoint comparator, non-ARM926 debug details) the CPU does not
+# halt there: "nand write" fails with "timed out while waiting for target
+# halted". kw_flash_nand therefore removes the working area while writing,
+# so the driver falls back to plain memory accesses.
 #
 # The working area is in DDR, so it can only be used after kw_halt_init.
 # 0x00f00000 is inside the 128 MiB of the smallest board and below the
@@ -81,7 +87,7 @@ proc kw_halt_init {} {
 	echo "kirkwood-nas: resetting and halting $KW_BOARD"
 	reset halt
 	# MMU, D-cache and I-cache off, alignment checking off,
-	# exception vectors low
+	# exception vectors high (BootROM)
 	arm mcr 15 0 1 0 0 0x00052078
 	kw_mpp_init
 	echo "kirkwood-nas: initialising DDR2 (same values as kwbimage.cfg)"
@@ -100,10 +106,32 @@ proc kw_halt_init {} {
 	kw_speed_up
 }
 
+# Effective JTAG clock in kHz; adapters clamp requests to their maximum.
+proc kw_adapter_khz {fallback} {
+	if {[catch {adapter speed} s] || ![regexp {([0-9]+)} $s -> khz]} {
+		return $fallback
+	}
+	return $khz
+}
+
 proc kw_speed_up {} {
 	global KW_FAST_SPEED
 	adapter speed $KW_FAST_SPEED
-	echo "kirkwood-nas: JTAG clock now $KW_FAST_SPEED kHz for transfers"
+	set khz [kw_adapter_khz $KW_FAST_SPEED]
+	if {$khz != $KW_FAST_SPEED} {
+		echo "kirkwood-nas: JTAG clock now $khz kHz for transfers (adapter maximum, $KW_FAST_SPEED requested)"
+	} else {
+		echo "kirkwood-nas: JTAG clock now $khz kHz for transfers"
+	}
+}
+
+proc kw_work_area {enable} {
+	set t [target current]
+	if {$enable} {
+		$t configure -work-area-phys 0x00f00000 -work-area-size 0x10000
+	} else {
+		$t configure -work-area-size 0
+	}
 }
 
 proc kw_report {what file t0} {
@@ -137,13 +165,42 @@ proc kw_boot_ram {image} {
 }
 
 proc kw_flash_nand {image} {
+	global KW_NAND_PAGE KW_DUMP_CHUNK
+
+	set size [file size $image]
+	if {$size > 0xc0000} {
+		error "kirkwood-nas: $image is larger than the barebox partition"
+	}
+
 	kw_halt_init
 	nand probe 0
+
+	# see the comment at "arm7_9 dcc_downloads" above
+	kw_work_area 0
+
 	echo "kirkwood-nas: erasing barebox partition (0x0 - 0xc0000)"
 	nand erase 0 0x0 0xc0000
-	echo "kirkwood-nas: writing $image with Kirkwood BootROM ECC"
+
+	set tmp "$image.part"
+	echo [format "kirkwood-nas: writing %s (%d KiB) with Kirkwood BootROM ECC" \
+		$image [expr {$size / 1024}]]
+	set in [open $image rb]
 	set t0 [ms]
-	nand write 0 $image 0 oob_softecc_kw
+	for {set off 0} {$off < $size} {incr off $KW_DUMP_CHUNK} {
+		set f [open $tmp wb]
+		$f puts -nonewline [$in read $KW_DUMP_CHUNK]
+		$f close
+		set r [nand write 0 $tmp $off oob_softecc_kw]
+		file delete $tmp
+		set done [expr {$off + $KW_DUMP_CHUNK}]
+		if {$done > $size} {
+			set done $size
+		}
+		kw_progress $done $size $t0
+	}
+	$in close
+
+	kw_work_area 1
 	kw_report "written" $image $t0
 	echo "kirkwood-nas: done, power cycle the board"
 }
@@ -192,6 +249,20 @@ proc kw_fmt_time {s} {
 	return [format "%d:%02d" [expr {int($s) / 60}] [expr {int($s) % 60}]]
 }
 
+proc kw_progress {done total t0} {
+	set ms [expr {[ms] - $t0}]
+	if {$ms < 1} {
+		set ms 1
+	}
+	set secs [expr {$ms / 1000.0}]
+	set rate [expr {$done / 1024.0 / $secs}]
+	set eta [expr {($total - $done) / 1024.0 / $rate}]
+	echo [format "kirkwood-nas: %4d / %4d KiB  %3d%%  %6.1f KiB/s  elapsed %s  left %s" \
+		[expr {$done / 1024}] [expr {$total / 1024}] \
+		[expr {$done * 100 / $total}] $rate \
+		[kw_fmt_time $secs] [kw_fmt_time $eta]]
+}
+
 proc kw_dump_nand {file {length auto}} {
 	global KW_NAND_PAGE KW_DUMP_CHUNK KW_DUMP_FAST_MEM
 
@@ -235,18 +306,7 @@ proc kw_dump_nand {file {length auto}} {
 		kw_append_file $file $tmp
 		file delete $tmp
 
-		set done [expr {$off + $n}]
-		set ms [expr {[ms] - $t0}]
-		if {$ms < 1} {
-			set ms 1
-		}
-		set secs [expr {$ms / 1000.0}]
-		set rate [expr {$done / 1024.0 / $secs}]
-		set eta [expr {($length - $done) / 1024.0 / $rate}]
-		echo [format "kirkwood-nas: %4d / %4d KiB  %3d%%  %6.1f KiB/s  elapsed %s  left %s" \
-			[expr {$done / 1024}] [expr {$length / 1024}] \
-			[expr {$done * 100 / $length}] $rate \
-			[kw_fmt_time $secs] [kw_fmt_time $eta]]
+		kw_progress [expr {$off + $n}] $length $t0
 	}
 
 	arm7_9 fast_memory_access disable

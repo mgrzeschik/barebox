@@ -330,6 +330,13 @@ Alternative: write the NAND directly from OpenOCD:
 This uses OpenOCD's ``oob_softecc_kw`` mode, which writes the 4-bit
 Reed-Solomon ECC in the layout the Kirkwood BootROM natively expects.
 
+It is slow, but shows progress. OpenOCD's own on-target NAND write routine
+does not work on the Feroceon core (it fails with ``timed out while waiting
+for target halted``), so ``kw_flash_nand`` disables OpenOCD's working area
+during the write and OpenOCD writes every byte with a separate JTAG access.
+Loading barebox into RAM with ``openocd-ram`` and writing the NAND from
+barebox is much faster.
+
 To use the OpenOCD files without the helper:
 
 .. code-block:: sh
