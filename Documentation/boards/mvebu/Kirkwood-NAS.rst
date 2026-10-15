@@ -323,6 +323,21 @@ To use the OpenOCD files without the helper:
 If your adapter only has one of the reset lines, change ``reset_config`` in
 ``openocd/kirkwood-nas.tcl``.
 
+Transfer speed
+""""""""""""""
+
+The OpenOCD files enable DCC downloads and a working area in DDR. Without
+them, OpenOCD moves every word through the ARM9 debug logic, and loading
+and verifying barebox takes many times longer. The JTAG clock is 2 MHz
+during reset and DDR set-up. Once DDR runs it is raised to 6 MHz for the
+transfers. OpenOCD prints the time and rate for every load, verify and NAND
+write.
+
+To go faster, raise ``OPENOCD_FAST_SPEED`` step by step (for example 10000,
+then 12000 kHz) and keep the value at which ``verify_image`` still passes.
+With short wires most adapters work well above 6 MHz. If transfers fail or
+verification reports mismatches, lower it again.
+
 Segger J-Link
 """""""""""""
 
@@ -339,7 +354,8 @@ not used.
 
   # optional: several probes connected, or unstable scan chain
   export OPENOCD_SERIAL=000123456789     # serial printed by "JLinkExe" or OpenOCD
-  export OPENOCD_SPEED=500               # kHz, default 2000
+  export OPENOCD_SPEED=500               # kHz during reset, default 2000
+  export OPENOCD_FAST_SPEED=12000        # kHz for transfers, default 6000
 
 Without the helper:
 

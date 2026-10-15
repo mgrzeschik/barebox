@@ -47,7 +47,9 @@ Environment
                   "interface/ftdi/olimex-arm-usb-ocd-h.cfg" (required for
                   the openocd-* commands). "jlink" is a shorthand for
                   "interface/jlink.cfg" (Segger J-Link).
-  OPENOCD_SPEED   JTAG clock in kHz (default: 2000)
+  OPENOCD_SPEED   JTAG clock in kHz for reset and DDR set-up (default: 2000)
+  OPENOCD_FAST_SPEED
+                  JTAG clock in kHz for transfers (default: 6000)
   OPENOCD_SERIAL  serial number of the probe, if several are connected
 USAGE
 }
@@ -188,6 +190,9 @@ openocd_run() {
 	fi
 	if [ -n "${OPENOCD_SPEED:-}" ]; then
 		pre+=(-c "set KW_ADAPTER_SPEED $OPENOCD_SPEED")
+	fi
+	if [ -n "${OPENOCD_FAST_SPEED:-}" ]; then
+		pre+=(-c "set KW_FAST_SPEED $OPENOCD_FAST_SPEED")
 	fi
 
 	openocd -f "$adapter" "${pre[@]}" -f "$HERE/openocd/$b.cfg" \

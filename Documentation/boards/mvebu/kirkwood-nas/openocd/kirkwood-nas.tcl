@@ -25,13 +25,35 @@ source [find target/feroceon.cfg]
 # A J-Link drives nTRST (pin 3) and nRESET (pin 15) of the 20-pin connector.
 reset_config trst_and_srst
 
-# JTAG clock in kHz, override with -c "set KW_ADAPTER_SPEED <kHz>" before
-# this file (kirkwood-nas.sh: OPENOCD_SPEED=<kHz>). Lower it if the scan
-# chain is unstable with long wires.
+# JTAG clock in kHz. KW_ADAPTER_SPEED is used for reset, halt and DDR set-up,
+# KW_FAST_SPEED once the CPU is halted and DDR is running, for the bulk
+# transfers. Override with -c "set KW_ADAPTER_SPEED <kHz>" or
+# -c "set KW_FAST_SPEED <kHz>" before this file (kirkwood-nas.sh:
+# OPENOCD_SPEED / OPENOCD_FAST_SPEED). Lower them if transfers fail with
+# long or unshielded wires.
 if {![info exists KW_ADAPTER_SPEED]} {
 	set KW_ADAPTER_SPEED 2000
 }
+if {![info exists KW_FAST_SPEED]} {
+	set KW_FAST_SPEED 6000
+}
 adapter speed $KW_ADAPTER_SPEED
+
+# Without these, OpenOCD transfers every 32-bit word through the ARM9 debug
+# logic, which makes load_image, verify_image and NAND writes very slow:
+#
+#  - DCC downloads stream data through the debug communication channel to a
+#    small helper running on the CPU.
+#  - The working area holds that helper, the checksum code verify_image
+#    uses instead of reading everything back, and the NAND block write code
+#    of the orion NAND driver.
+#
+# The working area is in DDR, so it can only be used after kw_halt_init.
+# 0x00f00000 is inside the 128 MiB of the smallest board and below the
+# barebox load address 0x01000000.
+$_TARGETNAME configure -work-area-phys 0x00f00000 -work-area-size 0x10000 \
+	-work-area-backup 0
+arm7_9 dcc_downloads enable
 
 # Kirkwood NAND controller, chip select window at its reset default.
 nand device kirkwood.nand orion $_TARGETNAME 0xd8000000
@@ -71,6 +93,24 @@ proc kw_halt_init {} {
 		error "kirkwood-nas: DDR test failed, check JTAG wiring and board selection"
 	}
 	echo "kirkwood-nas: DDR test passed"
+
+	kw_speed_up
+}
+
+proc kw_speed_up {} {
+	global KW_FAST_SPEED
+	adapter speed $KW_FAST_SPEED
+	echo "kirkwood-nas: JTAG clock now $KW_FAST_SPEED kHz for transfers"
+}
+
+proc kw_report {what file t0} {
+	set ms [expr {[ms] - $t0}]
+	if {$ms < 1} {
+		set ms 1
+	}
+	set kib [expr {[file size $file] / 1024}]
+	echo [format "kirkwood-nas: %s %d KiB in %.1f s (%.0f KiB/s)" \
+		$what $kib [expr {$ms / 1000.0}] [expr {$kib * 1000.0 / $ms}]]
 }
 
 proc kw_memtest_word {addr expected} {
@@ -83,8 +123,12 @@ proc kw_boot_ram {image} {
 
 	kw_halt_init
 	echo "kirkwood-nas: loading $image to $KW_LOAD_ADDR"
+	set t0 [ms]
 	load_image $image $KW_LOAD_ADDR bin
+	kw_report "loaded" $image $t0
+	set t0 [ms]
 	verify_image $image $KW_LOAD_ADDR bin
+	kw_report "verified" $image $t0
 	echo "kirkwood-nas: starting barebox, watch the serial console (115200 8N1)"
 	resume $KW_LOAD_ADDR
 }
@@ -95,7 +139,9 @@ proc kw_flash_nand {image} {
 	echo "kirkwood-nas: erasing barebox partition (0x0 - 0xc0000)"
 	nand erase 0 0x0 0xc0000
 	echo "kirkwood-nas: writing $image with Kirkwood BootROM ECC"
+	set t0 [ms]
 	nand write 0 $image 0 oob_softecc_kw
+	kw_report "written" $image $t0
 	echo "kirkwood-nas: done, power cycle the board"
 }
 
