@@ -33,7 +33,11 @@ Getting barebox running (pick one)
                               BootROM does not pick up the image.
   uboot BOARD [SERVERIP]      print U-Boot commands to chainload and flash
   openocd-ram BOARD           JTAG: init DDR, load and start barebox in RAM
-  openocd-nand BOARD          JTAG: write barebox to NAND directly
+  openocd-ram-update BOARD    JTAG: load barebox-<board>.img to 0x00800000
+                              and start barebox from RAM, then print the
+                              command that writes it to NAND from barebox
+                              (fastest way to update NAND via JTAG)
+  openocd-nand BOARD          JTAG: write barebox to NAND directly (slow)
   openocd-backup BOARD FILE [auto|full|LENGTH]
                               JTAG: save the old bootloader from NAND to FILE.
                               auto (default) dumps only the bootloader image,
@@ -215,6 +219,43 @@ cmd_openocd_ram() {
 	openocd_run "$b" -c "kw_boot_ram $(image "$b" -2nd)"
 }
 
+PRELOAD_ADDR=0x00800000
+
+cmd_openocd_ram_update() {
+	local b img img2 size crc
+	b=$(board_name "${1:-}")
+	img=$(image "$b" "")
+	img2=$(image "$b" -2nd)
+	"$HERE/check-kwbimage.py" --board "$b" "$img" >/dev/null ||
+		die "$img failed the image check"
+
+	read -r size crc < <(python3 -c '
+import sys, zlib
+d = open(sys.argv[1], "rb").read()
+print("0x%x 0x%08x" % (len(d), zlib.crc32(d)))' "$img")
+
+	openocd_run "$b" -c "kw_boot_ram_update $img2 $img $PRELOAD_ADDR"
+
+	cat <<MSG
+
+ barebox is now running from RAM, with $(basename "$img")
+ ($size bytes, CRC32 $crc) preloaded at $PRELOAD_ADDR.
+
+ On the serial console (115200 8N1), stop the autoboot and run:
+
+   update-barebox-ram $PRELOAD_ADDR $size $crc
+
+ or, with any barebox that lacks that command, the same by hand:
+
+   crc32 -v $crc $PRELOAD_ADDR+$size
+   memcpy -d /barebox-ram.img $PRELOAD_ADDR 0 $size
+   barebox_update -y -t nand /barebox-ram.img
+
+ Then "reset" (or power-cycle) to start barebox from NAND.
+
+MSG
+}
+
 cmd_openocd_nand() {
 	local b img; b=$(board_name "${1:-}")
 	img=$(image "$b" "")
@@ -268,6 +309,7 @@ check)		cmd_check "$@" ;;
 uart)		cmd_uart "$@" ;;
 uboot)		cmd_uboot "$@" ;;
 openocd-ram)	cmd_openocd_ram "$@" ;;
+openocd-ram-update)	cmd_openocd_ram_update "$@" ;;
 openocd-nand)	cmd_openocd_nand "$@" ;;
 openocd-backup)	cmd_openocd_backup "$@" ;;
 tftp)		cmd_tftp "$@" ;;

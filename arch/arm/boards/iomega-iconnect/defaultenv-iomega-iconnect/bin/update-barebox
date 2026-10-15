@@ -22,4 +22,4 @@ fi
 barebox_update -y -t nand "$img" || exit 1
 
 echo
-echo "barebox updated. Type 'reset' to start the new version."
+echo "barebox updated. Run the reset command to start the new version."

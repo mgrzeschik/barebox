@@ -10,6 +10,10 @@
 #
 #   kw_boot_ram IMAGE     load barebox-<board>-2nd.img into DDR and start it
 #                         (recommended: then update NAND from within barebox)
+#   kw_boot_ram_update IMAGE NANDIMAGE [ADDR]
+#                         like kw_boot_ram, but also preload the NAND image
+#                         barebox-<board>.img to ADDR (default 0x00800000),
+#                         so barebox can write it with update-barebox-ram
 #   kw_flash_nand IMAGE   write barebox-<board>.img to NAND offset 0 using
 #                         the BootROM's native Reed-Solomon ECC layout
 #   kw_dump_nand FILE [auto|full|LENGTH]
@@ -149,17 +153,43 @@ proc kw_memtest_word {addr expected} {
 	return [expr {[lindex $val 0] == $expected}]
 }
 
+proc kw_load_verified {image addr} {
+	echo "kirkwood-nas: loading $image to $addr"
+	set t0 [ms]
+	load_image $image $addr bin
+	kw_report "loaded" $image $t0
+	set t0 [ms]
+	verify_image $image $addr bin
+	kw_report "verified" $image $t0
+}
+
 proc kw_boot_ram {image} {
 	global KW_LOAD_ADDR
 
 	kw_halt_init
-	echo "kirkwood-nas: loading $image to $KW_LOAD_ADDR"
-	set t0 [ms]
-	load_image $image $KW_LOAD_ADDR bin
-	kw_report "loaded" $image $t0
-	set t0 [ms]
-	verify_image $image $KW_LOAD_ADDR bin
-	kw_report "verified" $image $t0
+	kw_load_verified $image $KW_LOAD_ADDR
+	echo "kirkwood-nas: starting barebox, watch the serial console (115200 8N1)"
+	resume $KW_LOAD_ADDR
+}
+
+# Where a NAND image may be preloaded. barebox places itself, its stack and
+# its malloc area in the upper half of RAM; the first page may hold the
+# exception vectors. Below the OpenOCD working area at 0x00f00000 is free.
+set KW_PRELOAD_MIN 0x00001000
+set KW_PRELOAD_END 0x00f00000
+
+proc kw_boot_ram_update {image nandimage {addr 0x00800000}} {
+	global KW_LOAD_ADDR KW_PRELOAD_MIN KW_PRELOAD_END
+
+	set size [file size $nandimage]
+	if {$addr < $KW_PRELOAD_MIN || $addr + $size > $KW_PRELOAD_END} {
+		error [format "kirkwood-nas: %s at 0x%08x does not fit between 0x%08x and 0x%08x" \
+			$nandimage $addr $KW_PRELOAD_MIN $KW_PRELOAD_END]
+	}
+
+	kw_halt_init
+	kw_load_verified $nandimage $addr
+	kw_load_verified $image $KW_LOAD_ADDR
 	echo "kirkwood-nas: starting barebox, watch the serial console (115200 8N1)"
 	resume $KW_LOAD_ADDR
 }

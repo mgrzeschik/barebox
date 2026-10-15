@@ -309,8 +309,41 @@ Tell the helper which JTAG adapter you use:
 
   export OPENOCD_ADAPTER=interface/ftdi/olimex-arm-usb-ocd-h.cfg
 
-Recommended: start barebox from RAM and let barebox write the NAND (same
-software path as every later update):
+Fastest: preload the NAND image into RAM together with barebox, then let
+barebox write it. No network and no USB stick are needed:
+
+.. code-block:: sh
+
+  kirkwood-nas.sh openocd-ram-update dockstar
+
+OpenOCD loads and verifies ``barebox-<board>.img`` at 0x00800000 and
+``barebox-<board>-2nd.img`` at 0x01000000, then starts barebox from RAM. The
+helper then prints the command to run on the serial console, with the image
+size and CRC32 filled in, for example:
+
+.. code-block:: sh
+
+  update-barebox-ram 0x00800000 0x903fc 0x667ca4fa
+
+``update-barebox-ram`` checks the CRC32 of the RAM contents and writes
+nothing if it does not match. It then copies the image into a RAM file and
+hands it to ``barebox_update``, which only accepts Kirkwood kwbimage v0
+files. A barebox without this command (for example one with an older saved
+environment) can do the same by hand:
+
+.. code-block:: sh
+
+  crc32 -v 0x667ca4fa 0x00800000+0x903fc
+  memcpy -d /barebox-ram.img 0x00800000 0 0x903fc
+  barebox_update -y -t nand /barebox-ram.img
+
+0x00800000 is safe because barebox keeps its image, stack and malloc area
+in the upper half of RAM. The preload has to end below the OpenOCD working
+area at 0x00f00000, and ``kw_boot_ram_update`` refuses addresses that do
+not fit.
+
+Alternatively, start only barebox from RAM and update from the network or a
+USB stick as in `Step 2: write barebox to NAND`_:
 
 .. code-block:: sh
 

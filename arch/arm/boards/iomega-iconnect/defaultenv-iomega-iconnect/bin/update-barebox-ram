@@ -1,0 +1,47 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# update-barebox-ram ADDR SIZE [CRC32]
+#
+# Write a barebox kwbimage that was preloaded into RAM to NAND, for
+# example after "kirkwood-nas.sh openocd-ram-update", which loads the
+# image to 0x00800000 via JTAG and prints this command with the right
+# SIZE and CRC32.
+#
+# With CRC32 given, the RAM contents are checked first and nothing is
+# written if they do not match. barebox_update additionally refuses
+# anything that is not a Kirkwood kwbimage v0.
+
+addr="$1"
+size="$2"
+crc="$3"
+img=/barebox-ram.img
+
+if [ -z "$addr" ] || [ -z "$size" ]; then
+	echo "usage: update-barebox-ram ADDR SIZE [CRC32]"
+	exit 1
+fi
+
+if [ -n "$crc" ]; then
+	if crc32 -v "$crc" "$addr+$size"; then
+		echo "update-barebox-ram: CRC32 of the RAM contents is correct"
+	else
+		echo "update-barebox-ram: CRC mismatch, image in RAM is damaged, nothing written"
+		exit 1
+	fi
+else
+	echo "update-barebox-ram: no CRC32 given, RAM contents are not verified"
+fi
+
+rm -f $img
+memcpy -d $img "$addr" 0 "$size" || exit 1
+
+if barebox_update -y -t nand $img; then
+	rm -f $img
+else
+	rm -f $img
+	exit 1
+fi
+
+echo
+echo "barebox updated. Run the reset command to start the new version."
