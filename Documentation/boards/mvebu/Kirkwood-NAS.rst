@@ -508,6 +508,36 @@ environment) and uses the built-in default. Make your settings and save:
 barebox updates. Use ``nv`` without arguments to list them,
 ``nv -r NAME`` to remove one.
 
+LEDs
+----
+
+While barebox runs, one LED shows a heartbeat (200 ms on, 1 s off):
+``power:blue`` on the iConnect and ``status:green:health`` on the DockStar.
+``led`` without arguments lists all LEDs, ``trigger`` without arguments
+shows which trigger drives which LED. The examples use the iConnect name.
+
+.. code-block:: sh
+
+  trigger -d power:blue                   # stop the heartbeat
+  led power:blue 1                        # then: steady on (0 = off)
+  led -b power:blue 100 1900              # or: blink, 100 ms on, 1900 ms off
+  trigger -t heartbeat power:blue         # back to the heartbeat
+
+These settings last until the next reset. To keep one, put the commands
+into an init script, which barebox runs on every start, and save the
+environment:
+
+.. code-block:: sh
+
+  edit /env/init/leds
+  # contents, for example:
+  #   #!/bin/sh
+  #   trigger -d power:blue
+  #   led power:blue 1
+  saveenv
+
+``rm /env/init/leds`` followed by ``saveenv`` restores the default.
+
 Step 4: boot Linux
 ------------------
 

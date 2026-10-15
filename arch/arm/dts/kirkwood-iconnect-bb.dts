@@ -19,6 +19,15 @@
 / {
 	barebox,disable-deep-probe;
 
+	/*
+	 * Fixed GPIO numbering as in Linux and the Marvell documentation:
+	 * bank 0 is GPIO 0-31, bank 1 is GPIO 32-49.
+	 */
+	aliases {
+		gpio0 = &gpio0;
+		gpio1 = &gpio1;
+	};
+
 	chosen {
 		/*
 		 * Upstream hardcodes the location where the Iomega stock
