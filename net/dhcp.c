@@ -82,6 +82,30 @@ static struct eth_device *dhcp_edev;
 struct dhcp_req_param dhcp_param;
 struct dhcp_result *dhcp_result;
 
+/*
+ * proxyDHCP (PXE) support, see RFC 4578 / PXE spec 2.1:
+ * A proxyDHCP server sends an additional DHCPOFFER without an address
+ * (yiaddr == 0) but with vendor class "PXEClient" and boot parameters.
+ * When enabled, we collect both offers, do the normal REQUEST/ACK with
+ * the address-giving server and then apply the boot parameters from the
+ * proxy offer.
+ */
+static bool dhcp_proxy_active;
+static struct dhcp_result *dhcp_proxy_result;
+static bool dhcp_offer_pending;
+static uint64_t dhcp_offer_time;
+static char *dhcp_proxy_vendor_id;
+static int global_dhcp_proxy;
+static int global_dhcp_proxy_wait = 1000;
+
+/*
+ * Client system architecture (option 93, IANA "Processor Architecture
+ * Types"). dnsmasq only answers proxyDHCP requests that carry it.
+ */
+#define DHCP_CLIENT_ARCH_DEFAULT \
+	(IS_ENABLED(CONFIG_ARM) ? (IS_ENABLED(CONFIG_64BIT) ? 0x16 : 0x15) : 0)
+static int global_dhcp_client_arch = DHCP_CLIENT_ARCH_DEFAULT;
+
 struct dhcp_receivce_opts {
 	IPaddr_t netmask;
 	IPaddr_t gateway;
@@ -98,6 +122,7 @@ struct dhcp_receivce_opts {
 #define DHCP_VENDOR_ID		60
 #define DHCP_CLIENT_ID		61
 #define DHCP_USER_CLASS		77
+#define DHCP_CLIENT_ARCH	93
 #define DHCP_CLIENT_UUID	97
 #define DHCP_OPTION224		224
 
@@ -220,6 +245,13 @@ static int dhcp_extended(u8 *e, int message_type, IPaddr_t ServerID,
 	e += dhcp_set_string_options(DHCP_CLIENT_UUID, dhcp_param.client_uuid, e);
 	e += dhcp_set_string_options(DHCP_OPTION224, dhcp_param.option224, e);
 
+	if (dhcp_proxy_active) {
+		*e++ = DHCP_CLIENT_ARCH;
+		*e++ = 2;
+		*e++ = (global_dhcp_client_arch >> 8) & 0xff;
+		*e++ = global_dhcp_client_arch & 0xff;
+	}
+
 	*e++ = 55;		/* Parameter Request List */
 	cnt = e++;		/* Pointer to count of requested items */
 
@@ -247,6 +279,7 @@ static int bootp_request(void)
 	const char *bfile;
 
 	dhcp_state = INIT;
+	dhcp_offer_pending = false;
 
 	debug("BOOTP broadcast\n");
 
@@ -361,7 +394,7 @@ static int dhcp_message_type(unsigned char *popt, unsigned int len)
 	return -1;
 }
 
-static void dhcp_send_request_packet(struct bootp *bp_offer)
+static void dhcp_send_request_packet(void)
 {
 	struct bootp *bp;
 	int extlen;
@@ -384,10 +417,10 @@ static void dhcp_send_request_packet(struct bootp *bp_offer)
 	memcpy(bp->bp_chaddr, dhcp_con->et->et_src, 6);
 
 	/*
-	 * ID is the id of the OFFER packet
+	 * ID is the id of the OFFER packet, which bootp_check_packet()
+	 * guarantees to be our own transaction id
 	 */
-
-	net_copy_uint32(&bp->bp_id, &bp_offer->bp_id);
+	net_copy_uint32(&bp->bp_id, &Bootp_id);
 
 	/*
 	 * Copy options from OFFER packet if present
@@ -397,6 +430,160 @@ static void dhcp_send_request_packet(struct bootp *bp_offer)
 
 	debug("Transmitting DHCPREQUEST packet\n");
 	net_udp_send(dhcp_con, sizeof(*bp) + extlen);
+}
+
+/*
+ * Find option @code in the vendor area of @bp. @len is the length of the
+ * BOOTP payload. Returns a pointer to the option data or NULL.
+ */
+static u8 *dhcp_find_option(struct bootp *bp, unsigned int len, u8 code,
+			    int *optlen)
+{
+	u8 *popt = (u8 *)bp->bp_vend;
+	u8 *end = (u8 *)bp + len;
+
+	if (len < sizeof(*bp) + 4)
+		return NULL;
+
+	if (net_read_uint32(popt) != htonl(BOOTP_VENDOR_MAGIC))
+		return NULL;
+
+	popt += 4;
+	while (popt < end && *popt != 0xff) {
+		if (*popt == 0) {	/* pad */
+			popt++;
+			continue;
+		}
+		if (popt + 2 > end || popt + 2 + popt[1] > end)
+			return NULL;
+		if (*popt == code) {
+			*optlen = popt[1];
+			return popt + 2;
+		}
+		popt += popt[1] + 2;
+	}
+
+	return NULL;
+}
+
+static bool dhcp_is_proxy_reply(struct bootp *bp, unsigned int len)
+{
+	int optlen;
+	u8 *opt;
+
+	if (net_read_ip(&bp->bp_yiaddr))
+		return false;
+
+	opt = dhcp_find_option(bp, len, DHCP_VENDOR_ID, &optlen);
+
+	return opt && optlen >= 9 && !memcmp(opt, "PXEClient", 9);
+}
+
+static void dhcp_proxy_store(struct bootp *bp, unsigned int len)
+{
+	struct dhcp_result *saved = dhcp_result;
+
+	if (dhcp_proxy_result)
+		return;		/* first proxy offer wins */
+
+	dhcp_proxy_result = xzalloc(sizeof(*dhcp_proxy_result));
+
+	/* reuse the option parser, but let it fill the proxy result */
+	dhcp_result = dhcp_proxy_result;
+	bootp_copy_net_params(bp);
+	if (net_read_uint32(&bp->bp_vend[0]) == htonl(BOOTP_VENDOR_MAGIC))
+		dhcp_options_process((u8 *)&bp->bp_vend[4], bp, len);
+	dhcp_result = saved;
+
+	dev_info(&dhcp_edev->dev,
+		 "proxyDHCP offer from %pI4: server %pI4%s%s, bootfile %s\n",
+		 &dhcp_proxy_result->dhcp_serverip,
+		 &dhcp_proxy_result->serverip,
+		 dhcp_proxy_result->tftp_server_name ? " / " : "",
+		 dhcp_proxy_result->tftp_server_name ?: "",
+		 dhcp_proxy_result->bootfile ?: "<none>");
+}
+
+static void dhcp_select_offer(void)
+{
+	dhcp_offer_pending = false;
+	dhcp_state = REQUESTING;
+	dhcp_start = get_time_ns();
+	dhcp_send_request_packet();
+}
+
+/*
+ * SELECTING state with proxyDHCP enabled: collect the first address offer
+ * and the first proxy offer. Send the REQUEST once both are there, or when
+ * the proxy wait time expires (see dhcp_request()).
+ */
+static void dhcp_selecting_proxy(struct bootp *bp, unsigned int len)
+{
+	if (dhcp_message_type((u8 *)bp->bp_vend,
+			      len - offsetof(struct bootp, bp_vend)) != DHCP_OFFER)
+		return;
+
+	if (dhcp_is_proxy_reply(bp, len)) {
+		dhcp_proxy_store(bp, len);
+	} else if (net_read_ip(&bp->bp_yiaddr)) {
+		if (dhcp_offer_pending)
+			return;		/* first address offer wins */
+
+		if (net_read_uint32(&bp->bp_vend[0]) == htonl(BOOTP_VENDOR_MAGIC))
+			dhcp_options_process((u8 *)&bp->bp_vend[4], bp, len);
+		bootp_copy_net_params(bp);
+
+		dhcp_offer_pending = true;
+		dhcp_offer_time = get_time_ns();
+		/* don't let the DISCOVER retransmit kill the pending offer */
+		dhcp_start = dhcp_offer_time;
+	} else {
+		debug("%s: ignoring OFFER without address\n", __func__);
+		return;
+	}
+
+	if (dhcp_offer_pending && dhcp_proxy_result)
+		dhcp_select_offer();
+}
+
+static void dhcp_take_str(char **dst, char **src)
+{
+	if (!*src)
+		return;
+
+	free(*dst);
+	*dst = *src;
+	*src = NULL;
+}
+
+/*
+ * Boot parameters from the proxy offer take precedence over the ones
+ * from the address-giving DHCP server.
+ */
+static void dhcp_proxy_merge(void)
+{
+	struct dhcp_result *p = dhcp_proxy_result;
+
+	if (!p)
+		return;
+
+	/*
+	 * A proxy without next-server is usually the boot server itself
+	 * (e.g. dnsmasq with enable-tftp), so fall back to its server id.
+	 */
+	if (!p->tftp_server_name && !p->serverip)
+		p->serverip = p->dhcp_serverip;
+
+	if (p->tftp_server_name || p->serverip) {
+		free(dhcp_result->tftp_server_name);
+		dhcp_result->tftp_server_name = NULL;
+		dhcp_take_str(&dhcp_result->tftp_server_name, &p->tftp_server_name);
+		dhcp_result->serverip = p->serverip;
+	}
+
+	dhcp_take_str(&dhcp_result->bootfile, &p->bootfile);
+	dhcp_take_str(&dhcp_result->rootpath, &p->rootpath);
+	dhcp_take_str(&dhcp_result->devicetree, &p->devicetree);
 }
 
 /*
@@ -427,6 +614,12 @@ static void dhcp_handler(void *ctx, char *packet, unsigned int len)
 		 * OFFER from a server we want.
 		 */
 		debug("%s: state SELECTING, bp_file: \"%s\"\n", __func__, bp->bp_file);
+
+		if (dhcp_proxy_active) {
+			dhcp_selecting_proxy(bp, udp.len);
+			break;
+		}
+
 		dhcp_state = REQUESTING;
 
 		if (net_read_uint32(&bp->bp_vend[0]) == htonl(BOOTP_VENDOR_MAGIC))
@@ -435,11 +628,26 @@ static void dhcp_handler(void *ctx, char *packet, unsigned int len)
 		bootp_copy_net_params(bp); /* Store net params from reply */
 
 		dhcp_start = get_time_ns();
-		dhcp_send_request_packet(bp);
+		dhcp_send_request_packet();
 
 		break;
 	case REQUESTING:
 		debug("%s: State REQUESTING\n", __func__);
+
+		if (dhcp_proxy_active) {
+			/* a late proxy offer is still welcome */
+			if (dhcp_is_proxy_reply(bp, udp.len)) {
+				int type = dhcp_message_type((u8 *)bp->bp_vend,
+						udp.len - offsetof(struct bootp, bp_vend));
+
+				if (type == DHCP_OFFER)
+					dhcp_proxy_store(bp, udp.len);
+				break;
+			}
+			/* an ACK without address can't be ours */
+			if (!net_read_ip(&bp->bp_yiaddr))
+				break;
+		}
 
 		if (dhcp_message_type((u8 *)bp->bp_vend,
 				      len - offsetof(struct bootp, bp_vend)) == DHCP_ACK) {
@@ -511,6 +719,25 @@ int dhcp_request(struct eth_device *edev, const struct dhcp_req_param *param,
 	if (!dhcp_param.retries)
 		dhcp_param.retries = global_dhcp_retries;
 
+	dhcp_proxy_active = IS_ENABLED(CONFIG_NET_DHCP_PROXY) &&
+			    (dhcp_param.proxy || global_dhcp_proxy);
+	dhcp_proxy_result = NULL;
+	dhcp_offer_pending = false;
+	dhcp_proxy_vendor_id = NULL;
+
+	/* proxyDHCP servers only answer clients announcing "PXEClient" */
+	if (dhcp_proxy_active) {
+		const char *vid = dhcp_param.vendor_id;
+
+		if (!vid || !*vid)
+			dhcp_proxy_vendor_id = xstrdup("PXEClient");
+		else if (strncmp(vid, "PXEClient", 9))
+			dhcp_proxy_vendor_id = xasprintf("PXEClient:%s", vid);
+
+		if (dhcp_proxy_vendor_id)
+			dhcp_param.vendor_id = dhcp_proxy_vendor_id;
+	}
+
 	dhcp_con = net_udp_eth_new(edev, IP_BROADCAST, PORT_BOOTPS, dhcp_handler, NULL);
 	if (IS_ERR(dhcp_con)) {
 		ret = PTR_ERR(dhcp_con);
@@ -538,6 +765,15 @@ int dhcp_request(struct eth_device *edev, const struct dhcp_req_param *param,
 			goto out1;
 		}
 		net_poll();
+		if (dhcp_state == SELECTING && dhcp_offer_pending) {
+			unsigned int wait = clamp_t(int, global_dhcp_proxy_wait, 0, 2500);
+
+			if (is_timeout(dhcp_offer_time, wait * MSECOND)) {
+				dev_warn(&edev->dev,
+					 "no proxyDHCP offer received, using plain DHCP offer\n");
+				dhcp_select_offer();
+			}
+		}
 		if (is_timeout(dhcp_start, 3 * SECOND)) {
 			dhcp_start = get_time_ns();
 			printf("T ");
@@ -548,6 +784,9 @@ int dhcp_request(struct eth_device *edev, const struct dhcp_req_param *param,
 				goto out1;
 		}
 	}
+
+	if (dhcp_proxy_active)
+		dhcp_proxy_merge();
 
 	pr_debug("DHCP result:\n"
 		"  ip: %pI4\n"
@@ -574,6 +813,13 @@ int dhcp_request(struct eth_device *edev, const struct dhcp_req_param *param,
 out1:
 	net_unregister(dhcp_con);
 out:
+	if (dhcp_proxy_result) {
+		dhcp_result_free(dhcp_proxy_result);
+		dhcp_proxy_result = NULL;
+	}
+	free(dhcp_proxy_vendor_id);
+	dhcp_proxy_vendor_id = NULL;
+
 	if (ret) {
 		debug("dhcp failed: %pe\n", ERR_PTR(ret));
 		free(dhcp_result);
@@ -668,6 +914,11 @@ static int dhcp_global_init(void)
 	globalvar_add_simple_string("dhcp.tftp_server_name", &global_dhcp_tftp_server_name);
 	globalvar_add_simple_int("dhcp.retries", &global_dhcp_retries, "%u");
 	globalvar_add_simple_string("dhcp.option224", &global_dhcp_option224);
+	if (IS_ENABLED(CONFIG_NET_DHCP_PROXY)) {
+		globalvar_add_simple_bool("dhcp.proxy", &global_dhcp_proxy);
+		globalvar_add_simple_int("dhcp.proxy_wait", &global_dhcp_proxy_wait, "%d");
+		globalvar_add_simple_int("dhcp.client_arch", &global_dhcp_client_arch, "%d");
+	}
 
 	return 0;
 }
@@ -684,3 +935,10 @@ BAREBOX_MAGICVAR(global.dhcp.tftp_server_name, "TFTP server Name returned from D
 BAREBOX_MAGICVAR(global.dhcp.oftree_file, "OF tree returned from DHCP request (option 224)");
 BAREBOX_MAGICVAR(global.dhcp.retries, "retry limit");
 BAREBOX_MAGICVAR(global.dhcp.option224, "private data to send to the DHCP server (option 224)");
+#ifdef CONFIG_NET_DHCP_PROXY
+BAREBOX_MAGICVAR(global.dhcp.proxy, "Use boot parameters from a proxyDHCP (PXE) server");
+BAREBOX_MAGICVAR(global.dhcp.proxy_wait,
+		 "time in ms to wait for a proxyDHCP offer (max 2500)");
+BAREBOX_MAGICVAR(global.dhcp.client_arch,
+		 "client system architecture (option 93) sent in proxyDHCP mode");
+#endif

@@ -80,6 +80,43 @@ The configuration can be changed on the command line with:
 The :ref:`dhcp command <command_dhcp>` will change the settings based on the answer
 from the DHCP server.
 
+proxyDHCP (PXE)
+^^^^^^^^^^^^^^^
+
+With ``CONFIG_NET_DHCP_PROXY`` enabled, barebox can take its boot parameters
+from a proxyDHCP server while the IP address still comes from the regular DHCP
+server. This is useful when the main DHCP server can't be changed. A typical
+proxyDHCP server is dnsmasq with:
+
+.. code-block:: none
+
+  port=0
+  dhcp-range=10.1.1.0,proxy
+  pxe-prompt="barebox",0
+  dhcp-boot=image,,10.1.1.30
+  enable-tftp
+  tftp-root=/srv/tftp
+
+Note that dnsmasq only enables its PXE/proxyDHCP handling when the
+configuration contains a ``pxe-prompt`` or ``pxe-service`` line.
+
+Enable it with ``global.dhcp.proxy=1`` (or ``nv.dhcp.proxy=1`` to make it
+persistent), or for a single request with ``dhcp -P``. In proxy mode barebox
+announces itself as ``PXEClient:<global.dhcp.vendor_id>`` because proxyDHCP
+servers only answer clients whose vendor class starts with ``PXEClient``.
+It also sends the client system architecture (option 93) from
+``global.dhcp.client_arch``, which defaults to 0x15 on 32-bit ARM, 0x16 on
+64-bit ARM and 0 (x86 BIOS) otherwise.
+
+barebox then waits up to ``global.dhcp.proxy_wait`` milliseconds (default 1000,
+max 2500) after the address offer for a proxy offer. The server IP, TFTP server
+name, bootfile, rootpath and devicetree from the proxy offer take precedence
+over the ones from the regular DHCP server. If no proxy offer arrives, the
+regular offer is used unchanged. If the proxy offer contains neither a server
+address nor a TFTP server name, the proxy's own address is used as server.
+
+As with plain DHCP, the server IP is only set if ``global.net.server`` is empty.
+
 To make the network device settings persistent across reboots there is a nonvolatile
 variable (nvvar) for each of the variables above. The network device specific variables
 are:

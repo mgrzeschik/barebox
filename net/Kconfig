@@ -46,6 +46,18 @@ config NET_DHCP
 	bool
 	prompt "dhcp support"
 
+config NET_DHCP_PROXY
+	bool
+	depends on NET_DHCP
+	prompt "proxyDHCP (PXE) support"
+	help
+	  Allow the DHCP client to take its boot parameters (server IP,
+	  TFTP server name, bootfile, rootpath, devicetree) from a
+	  proxyDHCP server, e.g. dnsmasq with "dhcp-range=<net>,proxy",
+	  while the IP address still comes from the regular DHCP server.
+
+	  Enable at runtime with global.dhcp.proxy=1 or "dhcp -P".
+
 config NET_SNTP
 	bool
 	prompt "sntp support"
