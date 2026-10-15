@@ -76,7 +76,9 @@ Offset      Size        barebox device           Content
 0x00000000  768 KiB     ``/dev/nand0.barebox``   barebox (kwbimage v0)
 0x000c0000  256 KiB     ``/dev/nand0.barebox-``  barebox environment
                         ``environment``          (one spare erase block)
-0x00100000  4 MiB       ``/dev/nand0.kernel``    optional raw zImage
+0x00100000  512 KiB     ``/dev/nand0.state``     barebox state (boot
+                                                 counters for A/B)
+0x00180000  3.5 MiB     ``/dev/nand0.kernel``    optional raw zImage
 0x00500000  rest        ``/dev/nand0.root``      UBI
 =========== =========== ======================== =========================
 
@@ -546,7 +548,21 @@ tree for the board plus the partition table above. A recent multi-platform
 ARMv5 kernel (``multi_v5_defconfig`` or a distribution kernel for Kirkwood) as
 plain ``zImage`` is all you need, no ``uImage`` and no appended device tree.
 
-The default boot order is ``nand0.root.ubi.rootfs usb nand-ubi nand-raw``.
+The default boot order is
+``bootchooser nand0.root.ubi.rootfs usb nand-ubi nand-raw``.
+
+``bootchooser``
+  A/B boot for RAUC managed systems. The UBI in the ``root`` partition holds
+  two root filesystem volumes, ``rootfs0`` (target ``system0``) and
+  ``rootfs1`` (target ``system1``), each booted via its Boot Loader
+  Specification entries. Priorities and remaining boot attempts live in the
+  barebox state in the ``state`` partition (``state.bootstate.system0`` and
+  ``state.bootstate.system1``), which RAUC changes from Linux with
+  ``barebox-state``. barebox passes ``bootchooser.active=<target>`` and, with
+  ``global.bootm.appendroot``, the matching ``root=ubi0:rootfsN`` to the
+  kernel, so both slots can hold the same image. Use ``bootchooser -i`` to
+  see the current state.
+
 
 ``nand0.root.ubi.rootfs``
   Boot Loader Specification entries in the UBIFS volume ``rootfs``: barebox

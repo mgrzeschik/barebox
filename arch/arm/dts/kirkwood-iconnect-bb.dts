@@ -6,7 +6,8 @@
  *
  *   0x00000000 - 0x000bffff  barebox              (768 KiB, kwbimage v0)
  *   0x000c0000 - 0x000fffff  barebox-environment  (256 KiB, 1 spare block)
- *   0x00100000 - 0x004fffff  kernel               (4 MiB, raw zImage)
+ *   0x00100000 - 0x0017ffff  state                (512 KiB, barebox state)
+ *   0x00180000 - 0x004fffff  kernel               (3.5 MiB, raw zImage)
  *   0x00500000 - 0x1fffffff  root                 (UBI)
  *
  * The upstream Linux partition table is replaced because its "uboot"
@@ -26,6 +27,57 @@
 	aliases {
 		gpio0 = &gpio0;
 		gpio1 = &gpio1;
+	};
+
+	state: state {
+		magic = <0x4b4e4153>;	/* "KNAS" */
+		compatible = "barebox,state";
+		backend-type = "raw";
+		backend = <&state_nand>;
+		/* NAND needs erase before write: circular storage type */
+
+		bootstate {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* names must match RAUC's bootname= and barebox bootchooser targets */
+			system0 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				remaining_attempts@0 {
+					reg = <0x0 0x4>;
+					type = "uint32";
+					default = <3>;
+				};
+				priority@4 {
+					reg = <0x4 0x4>;
+					type = "uint32";
+					default = <20>;
+				};
+			};
+
+			system1 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				remaining_attempts@8 {
+					reg = <0x8 0x4>;
+					type = "uint32";
+					default = <3>;
+				};
+				priority@c {
+					reg = <0xc 0x4>;
+					type = "uint32";
+					default = <10>;
+				};
+			};
+
+			last_chosen@10 {
+				reg = <0x10 0x4>;
+				type = "uint32";
+			};
+		};
 	};
 
 	chosen {
@@ -68,9 +120,14 @@
 			reg = <0x000c0000 0x00040000>;
 		};
 
-		partition@100000 {
+		state_nand: partition@100000 {
+			label = "state";
+			reg = <0x00100000 0x00080000>;
+		};
+
+		partition@180000 {
 			label = "kernel";
-			reg = <0x00100000 0x00400000>;
+			reg = <0x00180000 0x00380000>;
 		};
 
 		partition@500000 {
