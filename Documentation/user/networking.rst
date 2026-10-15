@@ -115,7 +115,8 @@ over the ones from the regular DHCP server. If no proxy offer arrives, the
 regular offer is used unchanged. If the proxy offer contains neither a server
 address nor a TFTP server name, the proxy's own address is used as server.
 
-As with plain DHCP, the server IP is only set if ``global.net.server`` is empty.
+Unlike plain DHCP, a server IP from a proxy offer replaces any value already in
+``global.net.server``, e.g. one set by an earlier DHCP request.
 
 To make the network device settings persistent across reboots there is a nonvolatile
 variable (nvvar) for each of the variables above. The network device specific variables

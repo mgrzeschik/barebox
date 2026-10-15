@@ -34,6 +34,7 @@ struct dhcp_result {
 	char *bootfile;
 	char *tftp_server_name;
 	uint32_t leasetime;
+	bool serverip_from_proxy;
 };
 
 struct eth_device;

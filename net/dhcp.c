@@ -579,6 +579,7 @@ static void dhcp_proxy_merge(void)
 		dhcp_result->tftp_server_name = NULL;
 		dhcp_take_str(&dhcp_result->tftp_server_name, &p->tftp_server_name);
 		dhcp_result->serverip = p->serverip;
+		dhcp_result->serverip_from_proxy = true;
 	}
 
 	dhcp_take_str(&dhcp_result->bootfile, &p->bootfile);
@@ -853,10 +854,18 @@ int dhcp_set_result(struct eth_device *edev, struct dhcp_result *res)
 		IPaddr_t ip;
 
 		ret = resolv(res->tftp_server_name, &ip);
-		if (!ret)
-			net_set_serverip_empty(ip);
+		if (!ret) {
+			if (res->serverip_from_proxy)
+				net_set_serverip(ip);
+			else
+				net_set_serverip_empty(ip);
+		}
 	} else if (res->serverip) {
-		net_set_serverip_empty(res->serverip);
+		/* an explicitly enabled proxyDHCP server overrides earlier values */
+		if (res->serverip_from_proxy)
+			net_set_serverip(res->serverip);
+		else
+			net_set_serverip_empty(res->serverip);
 	}
 
 	return 0;
