@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Attach the UBI in the NAND "root" partition, so its volumes can be booted
+# via Boot Loader Specification entries ("boot nand0.root.ubi.rootfs").
+# Only done if the partition really contains UBI: attaching an erased
+# partition would make UBI format it.
+
+[ -e /dev/nand0.root ] || exit 0
+[ -e /dev/nand0.root.ubi ] && exit 0
+
+filetype -s ubi_root_type /dev/nand0.root
+if [ "$ubi_root_type" = "ubi" ]; then
+	ubiattach /dev/nand0.root
+fi

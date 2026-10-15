@@ -546,7 +546,18 @@ tree for the board plus the partition table above. A recent multi-platform
 ARMv5 kernel (``multi_v5_defconfig`` or a distribution kernel for Kirkwood) as
 plain ``zImage`` is all you need, no ``uImage`` and no appended device tree.
 
-Three boot targets are included in the default environment:
+The default boot order is ``nand0.root.ubi.rootfs usb nand-ubi nand-raw``.
+
+``nand0.root.ubi.rootfs``
+  Boot Loader Specification entries in the UBIFS volume ``rootfs``: barebox
+  reads ``/loader/entries/*.conf`` in that volume and boots the newest entry.
+  systemd's ``kernel-install`` writes these entries with ``layout=bls`` and
+  ``BOOT_ROOT=/``, so kernels installed by the package manager are picked up
+  without touching barebox. An entry without ``devicetree`` line gets
+  barebox's own device tree. At startup ``/env/init/ubi-root`` attaches the
+  UBI in the ``root`` partition, but only if the partition contains UBI.
+
+The other three boot targets use fixed file names:
 
 ``usb``
   First partition of the first USB disk. Expects ``/boot/zImage``, optional

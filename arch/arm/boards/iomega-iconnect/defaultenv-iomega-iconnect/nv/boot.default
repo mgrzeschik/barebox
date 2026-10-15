@@ -1,1 +1,1 @@
-usb nand-ubi nand-raw
+nand0.root.ubi.rootfs usb nand-ubi nand-raw
