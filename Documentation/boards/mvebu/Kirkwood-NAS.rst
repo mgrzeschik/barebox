@@ -124,6 +124,33 @@ Which image to use where:
   else (U-Boot, OpenOCD) has already initialised the DDR. Never write this one
   to NAND offset 0, the BootROM cannot boot it.
 
+Transferring files to barebox
+-----------------------------
+
+barebox has no driver for the USB host controller of the Kirkwood SoC
+(``marvell,orion-ehci``), so it cannot read USB sticks on these boards.
+U-Boot and Linux can. In barebox, files come from a TFTP server, which barebox
+mounts on first access at ``/mnt/tftp``:
+
+.. code-block:: sh
+
+  dhcp                                  # or: eth0.ipaddr=… eth0.netmask=…
+  global.net.server=192.168.1.10        # if DHCP does not name the server
+  ls /mnt/tftp/barebox-iomega-iconnect.img
+
+Requirements on the TFTP server, which ``tftpd-hpa`` and ``dnsmasq`` both
+meet:
+
+- **File sizes:** the ``tsize`` option must be supported. ``ubiupdatevol``
+  and ``barebox_update`` need to know the file size before they write.
+- **Large files:** the block counter must wrap around. barebox uses
+  1432-byte blocks, so files over about 94 MB need block numbers beyond
+  65535.
+- **Backups:** uploads must be allowed (``tftpd-hpa --create``) for writing
+  backups from barebox to the server.
+
+``ubiupdatevol`` streams from TFTP, so images larger than the RAM are fine.
+
 Before you start
 ----------------
 
@@ -190,15 +217,14 @@ backup is exactly what is stored, whichever ECC layout the old bootloader
 was written with.
 
 From barebox itself, if you have already got it running from RAM (the
-first 1 MiB is covered by the two barebox partitions):
+first 1 MiB is covered by the two barebox partitions), onto a TFTP server
+that accepts uploads (see `Transferring files to barebox`_):
 
 .. code-block:: sh
 
-  usb
-  mkdir -p /mnt/usb
-  mount /dev/disk0.0 /mnt/usb
-  cp /dev/nand0.barebox /mnt/usb/backup-0.bin
-  cp /dev/nand0.barebox-environment /mnt/usb/backup-1.bin
+  dhcp
+  cp /dev/nand0.barebox /mnt/tftp/backup-0.bin
+  cp /dev/nand0.barebox-environment /mnt/tftp/backup-1.bin
 
 and join them on the PC with
 ``cat backup-0.bin backup-1.bin > bootloader-backup.bin``.
@@ -312,7 +338,7 @@ Tell the helper which JTAG adapter you use:
   export OPENOCD_ADAPTER=interface/ftdi/olimex-arm-usb-ocd-h.cfg
 
 Fastest: preload the NAND image into RAM together with barebox, then let
-barebox write it. No network and no USB stick are needed:
+barebox write it. No network is needed:
 
 .. code-block:: sh
 
@@ -344,8 +370,8 @@ in the upper half of RAM. The preload has to end below the OpenOCD working
 area at 0x00f00000, and ``kw_boot_ram_update`` refuses addresses that do
 not fit.
 
-Alternatively, start only barebox from RAM and update from the network or a
-USB stick as in `Step 2: write barebox to NAND`_:
+Alternatively, start only barebox from RAM and update from the network as in
+`Step 2: write barebox to NAND`_:
 
 .. code-block:: sh
 
@@ -465,14 +491,8 @@ At the barebox prompt, from a TFTP server:
 ``$global.net.server``. To use another server:
 ``global.net.server=192.168.1.10``.
 
-From a USB stick (FAT or ext2/3/4, first partition):
-
-.. code-block:: sh
-
-  usb
-  mkdir -p /mnt/usb
-  mount /dev/disk0.0 /mnt/usb
-  update-barebox /mnt/usb/barebox-seagate-dockstar.img
+barebox cannot read USB sticks on these boards, see
+`Transferring files to barebox`_.
 
 ``update-barebox`` is a thin wrapper around
 
@@ -497,8 +517,8 @@ environment) and uses the built-in default. Make your settings and save:
   # the MAC address you wrote down
   nv dev.eth0.ethaddr=00:10:75:xx:xx:xx
 
-  # boot order, first match wins (default: "usb nand-ubi nand-raw")
-  nv boot.default="usb nand-ubi nand-raw"
+  # boot order, first match wins
+  nv boot.default="bootchooser nand0.root.ubi.rootfs nand-ubi nand-raw"
 
   # extra kernel arguments, if any
   nv linux.bootargs.extra="..."
@@ -549,7 +569,7 @@ ARMv5 kernel (``multi_v5_defconfig`` or a distribution kernel for Kirkwood) as
 plain ``zImage`` is all you need, no ``uImage`` and no appended device tree.
 
 The default boot order is
-``bootchooser nand0.root.ubi.rootfs usb nand-ubi nand-raw``.
+``bootchooser nand0.root.ubi.rootfs nand-ubi nand-raw``.
 
 ``bootchooser``
   A/B boot for RAUC managed systems. The UBI in the ``root`` partition holds
@@ -573,21 +593,18 @@ The default boot order is
   barebox's own device tree. At startup ``/env/init/ubi-root`` attaches the
   UBI in the ``root`` partition, but only if the partition contains UBI.
 
-The other three boot targets use fixed file names:
-
-``usb``
-  First partition of the first USB disk. Expects ``/boot/zImage``, optional
-  ``/boot/initrd.img`` and ``/boot/board.dtb`` (to override barebox's device
-  tree). Root is ``/dev/sda1``.
+The other two boot targets use fixed file names:
 
 ``nand-ubi``
-  UBIFS volume ``rootfs`` in the ``root`` partition, same files as above.
+  UBIFS volume ``rootfs`` in the ``root`` partition. Expects
+  ``/boot/zImage``, optional ``/boot/initrd.img`` and ``/boot/board.dtb``
+  (to override barebox's device tree).
 
 ``nand-raw``
   Raw ``zImage`` in the ``kernel`` partition, root filesystem in the UBIFS
   volume ``rootfs``.
 
-Run one explicitly with ``boot usb``, ``boot nand-ubi`` and so on. Add
+Run one explicitly with ``boot nand-ubi`` and so on. Add
 ``-v`` for more output. The scripts are in ``/env/boot/`` and can be changed
 with ``edit`` and saved with ``saveenv``.
 
@@ -598,7 +615,7 @@ Setting up NAND for ``nand-ubi`` from barebox:
   ubiformat /dev/nand0.root
   ubiattach /dev/nand0.root
   ubimkvol /dev/nand0.root.ubi rootfs 0
-  ubiupdatevol /dev/nand0.root.ubi.rootfs /mnt/usb/rootfs.ubifs
+  ubiupdatevol /dev/nand0.root.ubi.rootfs /mnt/tftp/rootfs.ubifs
 
 ``rootfs.ubifs`` is created on your PC with
 
@@ -615,12 +632,12 @@ Writing a kernel for ``nand-raw``:
 .. code-block:: sh
 
   erase /dev/nand0.kernel.bb
-  cp /mnt/usb/zImage /dev/nand0.kernel.bb
+  cp /mnt/tftp/zImage /dev/nand0.kernel.bb
 
 Updating barebox later
 ----------------------
 
-Build the new version, put it on the TFTP server or a USB stick and run
+Build the new version, put it on the TFTP server and run
 ``update-barebox`` in barebox (see `Step 2: write barebox to NAND`_). The
 environment is not touched. Check the new image on the PC first:
 
@@ -644,11 +661,9 @@ aware device of the whole chip:
 
 .. code-block:: sh
 
-  usb
-  mkdir -p /mnt/usb
-  mount /dev/disk0.0 /mnt/usb
+  dhcp
   erase /dev/nand0.bb 0+1M
-  cp /mnt/usb/bootloader-backup.bin /dev/nand0.bb
+  cp /mnt/tftp/bootloader-backup.bin /dev/nand0.bb
   reset
 
 From Linux, the same is
