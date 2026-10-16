@@ -612,10 +612,17 @@ Setting up NAND for ``nand-ubi`` from barebox:
 
 .. code-block:: sh
 
+  erase /dev/nand0.root.bb
   ubiformat /dev/nand0.root
   ubiattach /dev/nand0.root
   ubimkvol /dev/nand0.root.ubi rootfs 0
   ubiupdatevol /dev/nand0.root.ubi.rootfs /mnt/tftp/rootfs.ubifs
+
+The ``erase`` is optional but avoids a flood of
+``ecc_sw_hamming_correct: uncorrectable ECC error`` messages. ``ubiformat``
+first reads every eraseblock, and the old firmware's data in the partition
+was written with a different ECC. Those read errors are harmless:
+``ubiformat`` only marks eraseblocks bad that fail to erase.
 
 ``rootfs.ubifs`` is created on your PC with
 
