@@ -28,6 +28,8 @@
 		gpio1 = &gpio1;
 		/* the state driver names the state after its alias */
 		state = &state;
+		/* barebox adds console=ttyS0,115200n8 only for aliased UARTs */
+		serial0 = &uart0;
 	};
 
 	state: state {
