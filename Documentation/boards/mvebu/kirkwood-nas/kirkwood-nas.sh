@@ -93,19 +93,9 @@ cmd_build() {
 
 	local mk=(make -C "$TOP" O="$BUILD" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE")
 
-	"${mk[@]}" mvebu_defconfig
-
-	# The Armada 370/XP boards in mvebu_defconfig need proprietary DDR
-	# training blobs (binary.0) that are not part of barebox. Kirkwood
-	# needs none, so only keep the two boards we want.
-	local cfg="$BUILD/.config" m
-	for m in $(grep -o '^CONFIG_MACH_[A-Z0-9_]*=y' "$cfg" | cut -d= -f1); do
-		case $m in
-		CONFIG_MACH_SEAGATE_DOCKSTAR|CONFIG_MACH_IOMEGA_ICONNECT) ;;
-		*) sed -i "s/^$m=y\$/# $m is not set/" "$cfg" ;;
-		esac
-	done
-	"${mk[@]}" olddefconfig
+	# kirkwood.config: only the Kirkwood boards. The Armada boards of
+	# mvebu_defconfig need DDR training firmware that is not part of barebox.
+	"${mk[@]}" mvebu_defconfig kirkwood.config
 	"${mk[@]}" -j"$(nproc)"
 
 	echo

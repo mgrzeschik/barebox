@@ -107,11 +107,20 @@ change that), verifies both images and lists them::
   build-kirkwood-nas/images/barebox-iomega-iconnect.img
   build-kirkwood-nas/images/barebox-iomega-iconnect-2nd.img
 
-The helper starts from ``mvebu_defconfig`` and disables the Armada 370/XP
-boards in it, because those need proprietary DDR training blobs
-(``binary.0``) that are not part of barebox. Kirkwood needs no blob. If you
-build by hand, do the same or the build stops at
-``No rule to make target 'arch/arm/boards/globalscale-mirabox/binary.0'``.
+The helper uses ``mvebu_defconfig`` with the ``kirkwood.config`` fragment,
+which keeps only the Kirkwood boards. To build by hand:
+
+.. code-block:: sh
+
+  make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- mvebu_defconfig kirkwood.config
+  make ARCH=arm CROSS_COMPILE=arm-linux-gnueabi-
+
+A plain ``mvebu_defconfig`` build works as well, but takes longer. Its Armada
+370/XP/38x boards need DDR training firmware (``arch/arm/boards/*/binary.0``)
+that is not part of barebox; their images are skipped with
+``** barebox-….img skipped due to missing firmware **`` and all other images
+are built. Kirkwood needs no such firmware, so ``kirkwood.config`` sets
+``CONFIG_MISSING_FIRMWARE_ERROR=y``.
 
 Which image to use where:
 
