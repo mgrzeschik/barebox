@@ -26,6 +26,8 @@
 	aliases {
 		gpio0 = &gpio0;
 		gpio1 = &gpio1;
+		/* the state driver names the state after its alias */
+		state = &state;
 	};
 
 	state: state {
@@ -34,6 +36,8 @@
 		backend-type = "raw";
 		backend = <&state_nand>;
 		/* NAND needs erase before write: circular storage type */
+		#address-cells = <1>;
+		#size-cells = <1>;
 
 		bootstate {
 			#address-cells = <1>;
